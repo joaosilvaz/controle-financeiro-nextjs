@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { CAT_MAP, fmtMoeda, hexToBg, mesLabel } from "@/lib/categories";
-import type { Transacao } from "@/lib/types";
+import { CAT_MAP, fmtMoeda, hexToBg, mesLabel } from "@/src/lib/categories";
+import type { Transacao } from "@/src/lib/types";
 
 const ROWS_PER_PAGE = 8;
 

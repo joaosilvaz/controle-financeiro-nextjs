@@ -1,7 +1,7 @@
 "use client";
 
-import { fmtMoeda } from "@/lib/categories";
-import type { Transacao } from "@/lib/types";
+import { fmtMoeda } from "@/src/lib/categories";
+import type { Transacao } from "@/src/lib/types";
 
 export default function StatsGrid({ transacoes }: { transacoes: Transacao[] }) {
   const total = transacoes.reduce((s, t) => s + (t.valor || 0), 0);

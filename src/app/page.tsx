@@ -1,17 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import ChartsPanel from "@/components/ChartsPanel";
-import PinGate from "@/components/PinGate";
-import Sidebar from "@/components/Sidebar";
-import StatsGrid from "@/components/StatsGrid";
-import TransactionForm from "@/components/TransactionForm";
-import TransactionsTable from "@/components/TransactionsTable";
-import SetupGate from "@/components/SetupGate";
-import { useAppData } from "@/hooks/useAppData";
-import { firebaseConfigured } from "@/lib/firebase";
-import { mesDe, mesLabel } from "@/lib/categories";
-import type { NovaTransacao, Transacao } from "@/lib/types";
+import ChartsPanel from "@/src/components/ChartsPanel";
+import PinGate from "@/src/components/PinGate";
+import Sidebar from "@/src/components/Sidebar";
+import StatsGrid from "@/src/components/StatsGrid";
+import TransactionForm from "@/src/components/TransactionForm";
+import TransactionsTable from "@/src/components/TransactionsTable";
+import SetupGate from "@/src/components/SetupGate";
+import { useAppData } from "@/src/hooks/useAppData";
+import { firebaseConfigured } from "@/src/lib/firebase";
+import { mesDe, mesLabel } from "@/src/lib/categories";
+import type { NovaTransacao, Transacao } from "@/src/lib/types";
 
 const SECTIONS = ["visao-geral", "novo", "lancamentos", "resumo"];
 

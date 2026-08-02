@@ -11,8 +11,8 @@ import {
 } from "chart.js";
 import { useMemo } from "react";
 import { Bar, Doughnut } from "react-chartjs-2";
-import { CAT_MAP } from "@/lib/categories";
-import type { Transacao } from "@/lib/types";
+import { CAT_MAP } from "@/src/lib/categories";
+import type { Transacao } from "@/src/lib/types";
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 

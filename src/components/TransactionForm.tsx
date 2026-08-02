@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { CATEGORIAS } from "@/lib/categories";
-import type { NovaTransacao, Transacao } from "@/lib/types";
+import { CATEGORIAS } from "@/src/lib/categories";
+import type { NovaTransacao, Transacao } from "@/src/lib/types";
 
 function estadoInicial(
   editing: Transacao | null,

@@ -15,8 +15,8 @@ import {
   updateDoc,
   addDoc,
 } from "firebase/firestore";
-import { auth, db, firebaseConfigured } from "@/lib/firebase";
-import type { NovaTransacao, Transacao } from "@/lib/types";
+import { auth, db, firebaseConfigured } from "@/src/lib/firebase";
+import type { NovaTransacao, Transacao } from "@/src/lib/types";
 
 const PIN_PADRAO = "1234";
 const DEFAULT_CARTOES = ["Cartão principal", "Débito", "Dinheiro"];
