@@ -14,6 +14,26 @@ const NAV_ITEMS = [
     ),
   },
   {
+    target: "contas",
+    label: "Contas e saldos",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M16 12h5M7 9h4" />
+      </svg>
+    ),
+  },
+  {
+    target: "cartoes",
+    label: "Cartões e faturas",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="5" width="20" height="14" rx="2" />
+        <path d="M2 10h20M6 15h4" />
+      </svg>
+    ),
+  },
+  {
     target: "novo",
     label: "Novo lançamento",
     icon: (

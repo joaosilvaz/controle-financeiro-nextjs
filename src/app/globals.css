@@ -121,6 +121,19 @@ section{scroll-margin-top:24px;}
 .stat .label{color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; font-weight:600;}
 .stat .value{font-size:21px; font-weight:700; margin-top:8px; font-variant-numeric:tabular-nums; letter-spacing:-0.01em;}
 .stat .sub{color:var(--muted-2); font-size:12px; margin-top:3px;}
+.stat-topline{display:flex; align-items:center; justify-content:space-between; gap:12px;}
+.stat-icon{
+  display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:8px;
+  background:#f1f4f8; color:var(--primary); font-size:15px; font-weight:700;
+}
+.stat .value.positive{color:var(--ok);}
+.stat .value.negative{color:var(--danger);}
+.stat .sub.warning{color:#a76508;}
+.stat-income{border-top:3px solid #35a77a;}
+.stat-expense{border-top:3px solid #d6635d;}
+.stat-balance{border-top:3px solid #5b8def;}
+.stat-projection{border-top:3px solid #8b6fc0;}
+.stat-total-balance{border-top:3px solid #1f7a4d;}
 
 .panel{
   background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:22px;
@@ -212,12 +225,20 @@ th.num{text-align:right;}
   font-weight:600; white-space:nowrap;
 }
 .chip .dot{width:7px; height:7px; border-radius:50%; display:inline-block;}
+.type-chip{display:inline-flex; padding:3px 9px; border-radius:20px; font-size:11.5px; font-weight:600; white-space:nowrap;}
+.type-chip.receita{background:#e8f6f0; color:#167552;}
+.type-chip.despesa{background:#fdeeed; color:#a63831;}
+.type-chip.transferencia{background:#eef0f3; color:#5b636e;}
+.tx-value.receita{color:var(--ok);}
+.tx-value.despesa{color:var(--danger);}
+.tx-value.transferencia{color:var(--muted);}
 
 .pessoa-tag{font-size:12.5px; color:var(--muted); font-weight:500;}
 
 .charts{display:grid; grid-template-columns:1.1fr 1fr; gap:20px;}
 .charts .chart-box{border:1px solid var(--border); border-radius:8px; padding:16px; background:var(--surface-alt);}
 .charts h3{font-size:12.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin:0 0 12px; font-weight:600;}
+.chart-empty{min-height:260px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:13px;}
 
 .pagination{display:flex; justify-content:space-between; align-items:center; margin-top:14px; font-size:12.5px; color:var(--muted);}
 .pagination .pg-btns{display:flex; gap:6px;}
@@ -230,6 +251,75 @@ th.num{text-align:right;}
   background:#fff7e6; border:1px solid #f2d38a; color:#8a5a00; font-size:12.5px;
   padding:8px 12px; border-radius:7px; margin-bottom:14px; font-weight:600;
 }
+.form-error{color:var(--danger); font-size:12.5px; font-weight:600;}
+
+/* ---------- contas ---------- */
+.panel-title-row{display:flex; justify-content:space-between; align-items:flex-start; gap:18px; margin-bottom:18px;}
+.panel-title-row h2{border:0; padding:0; margin:0 0 4px;}
+.panel-title-row p{margin:0; color:var(--muted); font-size:12.5px;}
+.account-warning{
+  background:#fff7e6; border:1px solid #f2d38a; color:#7a5209; border-radius:8px;
+  padding:10px 12px; font-size:12.5px; margin-bottom:16px;
+}
+.account-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px;}
+.account-card{border:1px solid var(--border); border-radius:10px; padding:15px; background:var(--surface-alt);}
+.account-card.inactive{opacity:.58;}
+.account-card-top{display:flex; align-items:center; gap:8px;}
+.account-color{width:10px; height:10px; border-radius:50%; flex-shrink:0;}
+.account-type{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600;}
+.account-card h3{font-size:13.5px; margin:12px 0 3px; font-weight:600;}
+.account-balance{font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--ok);}
+.account-balance.negative{color:var(--danger);}
+.account-initial{font-size:11.5px; color:var(--muted-2); margin-top:2px;}
+.account-actions{display:flex; gap:4px; margin-top:10px; padding-top:9px; border-top:1px solid var(--border);}
+.account-form{
+  display:grid; grid-template-columns:2fr 1.2fr 1fr 80px; gap:12px; align-items:end;
+  margin-top:16px; padding:16px; border:1px solid var(--border); border-radius:10px; background:#f8f9fb;
+}
+.account-form .color-input{height:39px; padding:4px; cursor:pointer;}
+.account-active{display:flex; align-items:center; gap:8px; grid-column:span 2; margin:0; color:var(--text);}
+.account-active input{width:auto; margin:0;}
+.account-form-actions{display:flex; gap:8px; grid-column:span 2; justify-content:flex-end;}
+.account-form .form-error{grid-column:1/-1;}
+.account-cell{font-size:12.5px; color:var(--muted); font-weight:500; white-space:nowrap;}
+
+/* ---------- cartões e faturas ---------- */
+.credit-card-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px;}
+.credit-card{
+  --card-color:#5b4fc4; color:#fff; border-radius:15px; padding:19px;
+  background:linear-gradient(135deg,var(--card-color),#171b2b 120%);
+  box-shadow:0 10px 28px rgba(20,25,40,.17); overflow:hidden; position:relative;
+}
+.credit-card::after{
+  content:""; position:absolute; width:170px; height:170px; border-radius:50%; right:-70px; top:-80px;
+  background:rgba(255,255,255,.08); pointer-events:none;
+}
+.credit-card.inactive{opacity:.58;}
+.credit-card-head{display:flex; justify-content:space-between; align-items:flex-start; gap:16px; position:relative; z-index:1;}
+.credit-card-head span{font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; opacity:.75;}
+.credit-card h3{font-size:15px; margin:3px 0 0; color:#fff;}
+.card-chip{width:34px; height:25px; border-radius:6px; background:linear-gradient(135deg,#f7d886,#b89235); opacity:.9;}
+.card-invoice-label{font-size:11.5px; opacity:.72; margin-top:24px;}
+.card-invoice-value{font-size:25px; line-height:1.2; font-weight:700; margin-top:3px; font-variant-numeric:tabular-nums;}
+.card-limit-row{display:flex; justify-content:space-between; gap:12px; font-size:10.5px; opacity:.78; margin-top:19px;}
+.card-limit-track{height:5px; border-radius:5px; background:rgba(255,255,255,.2); margin-top:7px; overflow:hidden;}
+.card-limit-track span{display:block; height:100%; border-radius:inherit; background:#fff;}
+.card-dates{font-size:10.5px; opacity:.7; margin-top:9px;}
+.credit-card .card-actions{border-color:rgba(255,255,255,.16); position:relative; z-index:1;}
+.credit-card .card-actions .link{color:#fff; opacity:.82;}
+.credit-card .card-actions .danger{color:#ffd1ce;}
+.invoice-forecast{margin-top:18px; border-top:1px solid var(--border); padding-top:17px;}
+.invoice-forecast h3{font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 10px;}
+.invoice-months{display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px;}
+.invoice-month{background:var(--surface-alt); border:1px solid var(--border); border-radius:8px; padding:10px; min-width:0;}
+.invoice-month span{display:block; color:var(--muted); font-size:10.5px; text-transform:uppercase;}
+.invoice-month strong{display:block; font-size:12.5px; margin-top:3px; overflow:hidden; text-overflow:ellipsis;}
+.card-form{
+  display:grid; grid-template-columns:2fr 1.1fr 1fr .8fr .8fr 70px; gap:12px; align-items:end;
+  margin-top:16px; padding:16px; border:1px solid var(--border); border-radius:10px; background:#f8f9fb;
+}
+.card-form .color-input{height:39px; padding:4px; cursor:pointer;}
+.card-form .form-error{grid-column:1/-1;}
 
 @media (max-width:900px){
   .sidebar{position:static; width:100%; height:auto; flex-direction:row; overflow-x:auto;}
@@ -237,17 +327,32 @@ th.num{text-align:right;}
   .main{margin-left:0;}
   nav.nav{flex-direction:row; padding:10px;}
   .sidebar-footer{display:none;}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .invoice-months{grid-template-columns:repeat(3,minmax(0,1fr));}
+  .card-form{grid-template-columns:repeat(3,minmax(0,1fr));}
 }
 @media (max-width:760px){
   form#txForm{grid-template-columns:repeat(2,1fr);}
   form#txForm .span2, form#txForm .full{grid-column:span 2;}
   .charts{grid-template-columns:1fr;}
   .toolbar{align-items:flex-start;}
+  .account-form{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .card-form{grid-template-columns:repeat(2,minmax(0,1fr));}
 }
 
 .table-scroll{width:100%; overflow-x:auto;}
 
 @media (max-width:640px){
+  .main{padding:22px 16px 48px;}
+  .stats{grid-template-columns:1fr;}
+  .panel-title-row{flex-direction:column;}
+  .panel-title-row button{width:100%;}
+  .account-form{grid-template-columns:1fr;}
+  .card-form{grid-template-columns:1fr;}
+  .invoice-months{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .account-active,.account-form-actions{grid-column:span 1;}
+  .account-form-actions{justify-content:stretch;}
+  .account-form-actions button{flex:1;}
   .table-scroll table, .table-scroll thead, .table-scroll tbody, .table-scroll tr, .table-scroll td{
     display:block; width:100%;
   }

@@ -1,4 +1,4 @@
-export const CATEGORIAS = [
+export const CATEGORIAS_DESPESA = [
   { nome: "Alimentação", cor: "#2f7a4f" },
   { nome: "Transporte", cor: "#1f6fa8" },
   { nome: "Moradia", cor: "#8a6a2e" },
@@ -8,6 +8,24 @@ export const CATEGORIAS = [
   { nome: "Compras", cor: "#a8306e" },
   { nome: "Educação", cor: "#1f8a7a" },
   { nome: "Outros", cor: "#5b636e" },
+] as const;
+
+export const CATEGORIAS_RECEITA = [
+  { nome: "Salário", cor: "#16835f" },
+  { nome: "Renda extra", cor: "#2d8f72" },
+  { nome: "Reembolso", cor: "#3e8ab8" },
+  { nome: "Rendimentos", cor: "#7868c8" },
+  { nome: "Outras receitas", cor: "#5b636e" },
+] as const;
+
+export const CATEGORIAS_TRANSFERENCIA = [
+  { nome: "Transferência", cor: "#7b8492" },
+] as const;
+
+export const CATEGORIAS = [
+  ...CATEGORIAS_DESPESA,
+  ...CATEGORIAS_RECEITA,
+  ...CATEGORIAS_TRANSFERENCIA,
 ] as const;
 
 export const CAT_MAP: Record<string, string> = Object.fromEntries(

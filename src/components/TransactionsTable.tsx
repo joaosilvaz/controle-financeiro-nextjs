@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CAT_MAP, fmtMoeda, hexToBg, mesLabel } from "@/src/lib/categories";
-import type { Transacao } from "@/src/lib/types";
+import { tipoDe } from "@/src/lib/finance";
+import type { ContaFinanceira, TipoTransacao, Transacao } from "@/src/lib/types";
 
 const ROWS_PER_PAGE = 8;
 
@@ -10,13 +11,18 @@ export default function TransactionsTable({
   transacoes,
   cartoes,
   pessoas,
+  contas,
   mesesDisponiveis,
   filterMonth,
   filterCartao,
   filterPessoa,
+  filterConta,
+  filterTipo,
   onFilterMonth,
   onFilterCartao,
   onFilterPessoa,
+  onFilterConta,
+  onFilterTipo,
   onEdit,
   onDelete,
   onClear,
@@ -25,13 +31,18 @@ export default function TransactionsTable({
   transacoes: Transacao[];
   cartoes: string[];
   pessoas: string[];
+  contas: ContaFinanceira[];
   mesesDisponiveis: string[];
   filterMonth: string;
   filterCartao: string;
   filterPessoa: string;
+  filterConta: string;
+  filterTipo: TipoTransacao | "";
   onFilterMonth: (v: string) => void;
   onFilterCartao: (v: string) => void;
   onFilterPessoa: (v: string) => void;
+  onFilterConta: (v: string) => void;
+  onFilterTipo: (v: TipoTransacao | "") => void;
   onEdit: (t: Transacao) => void;
   onDelete: (id: string) => void;
   onClear: () => void;
@@ -46,12 +57,26 @@ export default function TransactionsTable({
   const paginaAtual = Math.min(page, totalPaginas);
   const inicio = (paginaAtual - 1) * ROWS_PER_PAGE;
   const pagina = transacoes.slice(inicio, inicio + ROWS_PER_PAGE);
+  const contasPorId = useMemo(
+    () => new Map(contas.map((conta) => [conta.id, conta])),
+    [contas]
+  );
 
   return (
     <div className="panel">
       <div className="toolbar">
         <h2>Lançamentos</h2>
         <div className="filters">
+          <select
+            aria-label="Filtrar por tipo"
+            value={filterTipo}
+            onChange={(e) => onFilterTipo(e.target.value as TipoTransacao | "")}
+          >
+            <option value="">Todos os tipos</option>
+            <option value="despesa">Despesas</option>
+            <option value="receita">Receitas</option>
+            <option value="transferencia">Transferências</option>
+          </select>
           <select value={filterMonth} onChange={(e) => onFilterMonth(e.target.value)}>
             <option value="">Todos os meses</option>
             {mesesDisponiveis.map((m) => (
@@ -76,6 +101,12 @@ export default function TransactionsTable({
               </option>
             ))}
           </select>
+          <select value={filterConta} onChange={(e) => onFilterConta(e.target.value)}>
+            <option value="">Todas as contas</option>
+            {contas.map((conta) => (
+              <option key={conta.id} value={conta.id}>{conta.nome}</option>
+            ))}
+          </select>
         </div>
         <div className="actions-inline">
           <button className="secondary" onClick={onExport}>
@@ -96,8 +127,11 @@ export default function TransactionsTable({
               <tr>
                 <th>Data</th>
                 <th>Descrição</th>
+                <th>Tipo</th>
                 <th>Categoria</th>
+                <th>Conta</th>
                 <th>Cartão</th>
+                <th>Fatura</th>
                 <th>Pessoa</th>
                 <th className="num">Valor</th>
                 <th></th>
@@ -106,10 +140,22 @@ export default function TransactionsTable({
             <tbody>
               {pagina.map((t) => {
                 const cor = CAT_MAP[t.categoria];
+                const tipo = tipoDe(t);
+                const contaOrigem = t.contaId ? contasPorId.get(t.contaId) : undefined;
+                const contaDestino = t.contaDestinoId ? contasPorId.get(t.contaDestinoId) : undefined;
                 return (
                   <tr key={t.id}>
                     <td data-label="Data">{(t.data || "").split("-").reverse().join("/")}</td>
                     <td data-label="Descrição">{t.desc}</td>
+                    <td data-label="Tipo">
+                      <span className={`type-chip ${tipo}`}>
+                        {tipo === "receita"
+                          ? "Receita"
+                          : tipo === "transferencia"
+                            ? "Transferência"
+                            : "Despesa"}
+                      </span>
+                    </td>
                     <td data-label="Categoria">
                       <span
                         className="chip"
@@ -122,19 +168,32 @@ export default function TransactionsTable({
                         {t.categoria || "—"}
                       </span>
                     </td>
-                    <td data-label="Cartão">{t.cartao || "—"}</td>
+                    <td data-label="Conta" className="account-cell">
+                      {contaOrigem?.nome ?? "Não vinculada"}
+                      {tipo === "transferencia" && contaDestino ? ` → ${contaDestino.nome}` : ""}
+                    </td>
+                    <td data-label="Cartão">
+                      {t.cartao || "—"}
+                      {(t.totalParcelas ?? 1) > 1
+                        ? ` · ${t.parcelaAtual ?? 1}/${t.totalParcelas}`
+                        : ""}
+                    </td>
+                    <td data-label="Fatura">{t.faturaMes ? mesLabel(t.faturaMes) : "—"}</td>
                     <td data-label="Pessoa" className="pessoa-tag">{t.pessoa || "—"}</td>
-                    <td data-label="Valor" className="num">{fmtMoeda(t.valor)}</td>
+                    <td data-label="Valor" className={`num tx-value ${tipo}`}>
+                      {tipo === "receita" ? "+ " : tipo === "despesa" ? "− " : ""}
+                      {fmtMoeda(t.valor)}
+                    </td>
                     <td data-label="" style={{ whiteSpace: "nowrap" }}>
                       <div className="row-icon-actions">
-                        <button className="btn-action edit" onClick={() => onEdit(t)}>
+                        <button aria-label={`Editar ${t.desc}`} className="btn-action edit" onClick={() => onEdit(t)}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M12 20h9" />
                             <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
                           </svg>
                           Editar
                         </button>
-                        <button className="btn-action delete" onClick={() => onDelete(t.id)}>
+                        <button aria-label={`Excluir ${t.desc}`} className="btn-action delete" onClick={() => onDelete(t.id)}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M3 6h18" />
                             <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />

@@ -1,13 +1,25 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { CATEGORIAS } from "@/src/lib/categories";
-import type { NovaTransacao, Transacao } from "@/src/lib/types";
+import {
+  CATEGORIAS_DESPESA,
+  CATEGORIAS_RECEITA,
+  CATEGORIAS_TRANSFERENCIA,
+} from "@/src/lib/categories";
+import { tipoDe } from "@/src/lib/finance";
+import type {
+  CartaoCredito,
+  ContaFinanceira,
+  NovaTransacao,
+  TipoTransacao,
+  Transacao,
+} from "@/src/lib/types";
 
 function estadoInicial(
   editing: Transacao | null,
-  cartoes: string[],
-  pessoas: string[]
+  cartoes: CartaoCredito[],
+  pessoas: string[],
+  contas: ContaFinanceira[]
 ): NovaTransacao {
   if (editing) {
     return {
@@ -15,35 +27,56 @@ function estadoInicial(
       desc: editing.desc,
       categoria: editing.categoria,
       cartao: editing.cartao,
+      cartaoId:
+        editing.cartaoId ?? cartoes.find((cartao) => cartao.nome === editing.cartao)?.id ?? "",
       pessoa: editing.pessoa,
       valor: editing.valor,
+      tipo: tipoDe(editing),
+      contaId: editing.contaId ?? "",
+      contaDestinoId: editing.contaDestinoId ?? "",
+      dataCompra: editing.dataCompra,
+      faturaMes: editing.faturaMes,
+      parcelaAtual: editing.parcelaAtual,
+      totalParcelas: editing.totalParcelas ?? 1,
+      grupoParcelamentoId: editing.grupoParcelamentoId,
     };
   }
   return {
     data: new Date().toISOString().slice(0, 10),
     desc: "",
-    categoria: CATEGORIAS[0].nome,
-    cartao: cartoes[0] || "",
+    categoria: CATEGORIAS_DESPESA[0].nome,
+    cartao: "",
     pessoa: pessoas[0] || "",
     valor: 0,
+    tipo: "despesa",
+    contaId: contas.find((conta) => conta.ativa)?.id ?? "",
+    contaDestinoId: "",
+    cartaoId: "",
+    totalParcelas: 1,
   };
+}
+
+function categoriasPorTipo(tipo: TipoTransacao) {
+  if (tipo === "receita") return CATEGORIAS_RECEITA;
+  if (tipo === "transferencia") return CATEGORIAS_TRANSFERENCIA;
+  return CATEGORIAS_DESPESA;
 }
 
 export default function TransactionForm({
   cartoes,
   pessoas,
+  contas,
   editing,
   onSubmit,
   onCancelEdit,
-  onAddCartao,
   onAddPessoa,
 }: {
-  cartoes: string[];
+  cartoes: CartaoCredito[];
   pessoas: string[];
+  contas: ContaFinanceira[];
   editing: Transacao | null;
   onSubmit: (dados: NovaTransacao) => Promise<unknown>;
   onCancelEdit: () => void;
-  onAddCartao: (nome: string) => Promise<unknown>;
   onAddPessoa: (nome: string) => Promise<unknown>;
 }) {
   // Este componente recebe key={editing?.id ?? "novo"} do componente pai:
@@ -51,22 +84,78 @@ export default function TransactionForm({
   // o formulário, então o estado inicial abaixo já nasce correto sem precisar
   // sincronizar via useEffect.
   const [form, setForm] = useState<NovaTransacao>(() =>
-    estadoInicial(editing, cartoes, pessoas)
+    estadoInicial(editing, cartoes, pessoas, contas)
   );
+  const [formError, setFormError] = useState("");
+  const tipo = form.tipo ?? "despesa";
+  const categorias = categoriasPorTipo(tipo);
+  const contasAtivas = contas.filter((conta) => conta.ativa || conta.id === form.contaId);
+  const cartoesAtivos = cartoes.filter((cartao) => cartao.ativo || cartao.id === form.cartaoId);
+  const pagamentoSelecionado = form.cartaoId
+    ? `cartao:${form.cartaoId}`
+    : form.contaId
+      ? `conta:${form.contaId}`
+      : "";
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    await onSubmit(form);
-    if (!editing) {
-      setForm(estadoInicial(null, cartoes, pessoas));
+  function handlePagamento(valor: string) {
+    const [origem, id] = valor.split(":");
+    if (origem === "cartao") {
+      const cartao = cartoes.find((item) => item.id === id);
+      setForm((atual) => ({
+        ...atual,
+        contaId: "",
+        cartaoId: id,
+        cartao: cartao?.nome ?? "",
+      }));
+    } else if (origem === "conta") {
+      setForm((atual) => ({
+        ...atual,
+        contaId: id,
+        cartaoId: "",
+        cartao: "",
+        totalParcelas: 1,
+      }));
+    } else {
+      setForm((atual) => ({
+        ...atual,
+        contaId: "",
+        cartaoId: "",
+        cartao: "",
+        totalParcelas: 1,
+      }));
     }
   }
 
-  async function handleNovoCartao() {
-    const nome = prompt("Nome do novo cartão ou forma de pagamento:");
-    if (nome && nome.trim() && !cartoes.includes(nome.trim())) {
-      await onAddCartao(nome.trim());
-      setForm((f) => ({ ...f, cartao: nome.trim() }));
+  function handleTipo(tipoSelecionado: TipoTransacao) {
+    const categoriasDoTipo = categoriasPorTipo(tipoSelecionado);
+    setForm((formAtual) => ({
+      ...formAtual,
+      tipo: tipoSelecionado,
+      categoria: categoriasDoTipo[0].nome,
+      contaDestinoId: tipoSelecionado === "transferencia" ? formAtual.contaDestinoId : "",
+      cartaoId: tipoSelecionado === "despesa" ? formAtual.cartaoId : "",
+      cartao: tipoSelecionado === "despesa" ? formAtual.cartao : "",
+      totalParcelas: tipoSelecionado === "despesa" ? formAtual.totalParcelas : 1,
+    }));
+    setFormError("");
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (tipo === "transferencia") {
+      if (!form.contaId || !form.contaDestinoId) {
+        setFormError("Selecione as contas de origem e destino.");
+        return;
+      }
+      if (form.contaId === form.contaDestinoId) {
+        setFormError("A conta de destino precisa ser diferente da conta de origem.");
+        return;
+      }
+    }
+    setFormError("");
+    await onSubmit(form);
+    if (!editing) {
+      setForm(estadoInicial(null, cartoes, pessoas, contas));
     }
   }
 
@@ -88,6 +177,17 @@ export default function TransactionForm({
       )}
       <form id="txForm" onSubmit={handleSubmit}>
         <div>
+          <label>Tipo</label>
+          <select
+            value={tipo}
+            onChange={(e) => handleTipo(e.target.value as TipoTransacao)}
+          >
+            <option value="despesa">Despesa</option>
+            <option value="receita">Receita</option>
+            <option value="transferencia">Transferência</option>
+          </select>
+        </div>
+        <div>
           <label>Data</label>
           <input
             type="date"
@@ -96,6 +196,66 @@ export default function TransactionForm({
             onChange={(e) => setForm((f) => ({ ...f, data: e.target.value }))}
           />
         </div>
+        {tipo === "despesa" ? (
+          <div>
+            <label>Forma de pagamento</label>
+            <select value={pagamentoSelecionado} onChange={(e) => handlePagamento(e.target.value)}>
+              <option value="">Sem vínculo</option>
+              <optgroup label="Contas e dinheiro">
+                {contasAtivas.map((conta) => (
+                  <option key={conta.id} value={`conta:${conta.id}`}>{conta.nome}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Cartões de crédito">
+                {cartoesAtivos.map((cartao) => (
+                  <option key={cartao.id} value={`cartao:${cartao.id}`}>{cartao.nome}</option>
+                ))}
+              </optgroup>
+            </select>
+          </div>
+        ) : tipo === "receita" ? (
+          <div>
+            <label>Conta de entrada</label>
+            <select
+              value={form.contaId ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, contaId: e.target.value }))}
+            >
+              <option value="">Sem vínculo</option>
+              {contasAtivas.map((conta) => (
+                <option key={conta.id} value={conta.id}>{conta.nome}</option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div>
+          <label>Conta de origem</label>
+          <select
+            required
+            value={form.contaId ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, contaId: e.target.value }))}
+          >
+            <option value="">Sem vínculo</option>
+            {contasAtivas.map((conta) => (
+              <option key={conta.id} value={conta.id}>{conta.nome}</option>
+            ))}
+          </select>
+          </div>
+        )}
+        {tipo === "transferencia" ? (
+          <div>
+            <label>Conta de destino</label>
+            <select
+              required
+              value={form.contaDestinoId ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, contaDestinoId: e.target.value }))}
+            >
+              <option value="">Selecione</option>
+              {contas.filter((conta) => conta.ativa).map((conta) => (
+                <option key={conta.id} value={conta.id}>{conta.nome}</option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         <div className="span2">
           <label>Descrição</label>
           <input
@@ -112,22 +272,31 @@ export default function TransactionForm({
             value={form.categoria}
             onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))}
           >
-            {CATEGORIAS.map((c) => (
+            {categorias.map((c) => (
               <option key={c.nome}>{c.nome}</option>
             ))}
           </select>
         </div>
-        <div>
-          <label>Cartão / Forma</label>
-          <select
-            value={form.cartao}
-            onChange={(e) => setForm((f) => ({ ...f, cartao: e.target.value }))}
-          >
-            {cartoes.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
-        </div>
+        {tipo === "despesa" && form.cartaoId ? (
+          <div>
+            <label>{editing ? "Parcelamento" : "Número de parcelas"}</label>
+            {editing ? (
+              <input
+                disabled
+                value={`${form.parcelaAtual ?? 1}/${form.totalParcelas ?? 1}`}
+              />
+            ) : (
+              <select
+                value={form.totalParcelas ?? 1}
+                onChange={(e) => setForm((f) => ({ ...f, totalParcelas: Number(e.target.value) }))}
+              >
+                {Array.from({ length: 24 }, (_, indice) => indice + 1).map((numero) => (
+                  <option key={numero} value={numero}>{numero}x</option>
+                ))}
+              </select>
+            )}
+          </div>
+        ) : null}
         <div>
           <label>Pessoa</label>
           <select
@@ -140,7 +309,9 @@ export default function TransactionForm({
           </select>
         </div>
         <div>
-          <label>Valor (R$)</label>
+          <label>
+            {!editing && (form.totalParcelas ?? 1) > 1 ? "Valor total (R$)" : "Valor (R$)"}
+          </label>
           <input
             type="number"
             step="0.01"
@@ -158,13 +329,11 @@ export default function TransactionForm({
               Cancelar edição
             </button>
           )}
-          <button type="button" className="secondary" onClick={handleNovoCartao}>
-            + Novo cartão/forma
-          </button>
           <button type="button" className="secondary" onClick={handleNovaPessoa}>
             + Nova pessoa
           </button>
         </div>
+        {formError ? <div className="full form-error" role="alert">{formError}</div> : null}
       </form>
     </div>
   );
