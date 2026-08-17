@@ -2,9 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import AccountsPanel from "@/src/components/AccountsPanel";
+import BudgetPanel from "@/src/components/BudgetPanel";
 import CardsPanel from "@/src/components/CardsPanel";
 import ChartsPanel from "@/src/components/ChartsPanel";
+import GoalsPanel from "@/src/components/GoalsPanel";
+import InsightsPanel from "@/src/components/InsightsPanel";
 import PinGate from "@/src/components/PinGate";
+import RecurringPanel from "@/src/components/RecurringPanel";
 import Sidebar from "@/src/components/Sidebar";
 import StatsGrid from "@/src/components/StatsGrid";
 import TransactionForm from "@/src/components/TransactionForm";
@@ -23,7 +27,7 @@ import {
 } from "@/src/lib/finance";
 import type { NovaTransacao, TipoTransacao, Transacao } from "@/src/lib/types";
 
-const SECTIONS = ["visao-geral", "contas", "cartoes", "novo", "lancamentos", "resumo"];
+const SECTIONS = ["visao-geral", "insights", "contas", "cartoes", "orcamentos", "recorrencias", "metas", "novo", "lancamentos", "resumo"];
 
 export default function Home() {
   const data = useAppData();
@@ -32,6 +36,7 @@ export default function Home() {
   const [unlocked, setUnlocked] = useState(false);
   const [editing, setEditing] = useState<Transacao | null>(null);
   const [filterMonth, setFilterMonth] = useState(() => mesAtual());
+  const [budgetMonth, setBudgetMonth] = useState(() => mesAtual());
   const [filterCartao, setFilterCartao] = useState("");
   const [filterPessoa, setFilterPessoa] = useState("");
   const [filterConta, setFilterConta] = useState("");
@@ -70,11 +75,15 @@ export default function Home() {
   }, [unlocked]);
 
   const mesesDisponiveis = useMemo(() => {
-    return [...new Set([mesAtual(), ...data.transacoes.map((t) => mesDe(t.data))])]
+    return [...new Set([
+      mesAtual(),
+      ...data.transacoes.map((t) => mesDe(t.data)),
+      ...data.orcamentos.map((orcamento) => orcamento.mes),
+    ])]
       .filter(Boolean)
       .sort()
       .reverse();
-  }, [data.transacoes]);
+  }, [data.orcamentos, data.transacoes]);
 
   const cartoesDisponiveis = useMemo(
     () => [...new Set([
@@ -247,7 +256,7 @@ export default function Home() {
       linhas.push(
         [
           t.data,
-          tipoDe(t),
+          t.faturaPagamentoId ? "pagamento_fatura" : tipoDe(t),
           t.desc || "",
           t.categoria || "",
           contaOrigem,
@@ -313,6 +322,18 @@ export default function Home() {
             />
           </section>
 
+          <section id="insights" ref={(el) => { sectionRefs.current["insights"] = el; }}>
+            <InsightsPanel
+              transacoes={data.transacoes}
+              orcamentos={data.orcamentos}
+              recorrencias={data.recorrencias}
+              faturas={data.faturas}
+              metas={data.metas}
+              movimentosMetas={data.movimentosMetas}
+              onNavigate={handleNavigate}
+            />
+          </section>
+
           <section id="contas" ref={(el) => { sectionRefs.current["contas"] = el; }}>
             <AccountsPanel
               contas={data.contas}
@@ -328,9 +349,58 @@ export default function Home() {
             <CardsPanel
               cartoes={data.cartoesCredito}
               transacoes={data.transacoes}
+              contas={data.contas}
+              faturas={data.faturas}
               onAdd={data.addCartaoCredito}
               onUpdate={data.updateCartaoCredito}
               onDelete={data.deleteCartaoCredito}
+              onCloseInvoice={data.fecharFatura}
+              onPayInvoice={data.pagarFatura}
+              onReopenInvoice={data.reabrirFatura}
+            />
+          </section>
+
+          <section id="orcamentos" ref={(el) => { sectionRefs.current["orcamentos"] = el; }}>
+            <BudgetPanel
+              key={budgetMonth}
+              orcamentos={data.orcamentos}
+              transacoes={data.transacoes}
+              mes={budgetMonth}
+              onMonthChange={setBudgetMonth}
+              onAdd={data.addOrcamento}
+              onAddMany={data.addOrcamentos}
+              onUpdate={data.updateOrcamento}
+              onDelete={data.deleteOrcamento}
+            />
+          </section>
+
+          <section id="recorrencias" ref={(el) => { sectionRefs.current["recorrencias"] = el; }}>
+            <RecurringPanel
+              recorrencias={data.recorrencias}
+              transacoes={data.transacoes}
+              contas={data.contas}
+              cartoes={data.cartoesCredito}
+              pessoas={data.pessoas}
+              saldoAtual={saldoAtual}
+              onAdd={data.addRecorrencia}
+              onUpdate={data.updateRecorrencia}
+              onDelete={data.deleteRecorrencia}
+              onGenerate={data.gerarTransacoesRecorrentes}
+            />
+          </section>
+
+          <section id="metas" ref={(el) => { sectionRefs.current["metas"] = el; }}>
+            <GoalsPanel
+              metas={data.metas}
+              movimentos={data.movimentosMetas}
+              transacoes={data.transacoes}
+              contas={data.contas}
+              saldosContas={saldosContas}
+              onAdd={data.addMeta}
+              onUpdate={data.updateMeta}
+              onDelete={data.deleteMeta}
+              onAddMovement={data.addMovimentoMeta}
+              onDeleteMovement={data.deleteMovimentoMeta}
             />
           </section>
 

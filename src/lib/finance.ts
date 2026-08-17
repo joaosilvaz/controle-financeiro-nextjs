@@ -1,7 +1,9 @@
 import type {
   CartaoCredito,
   ContaFinanceira,
+  NovaRecorrenciaFinanceira,
   NovaTransacao,
+  RecorrenciaFinanceira,
   TipoTransacao,
   Transacao,
 } from "@/src/lib/types";
@@ -141,6 +143,51 @@ export function adicionarMesesAData(dataTexto: string, quantidade: number): stri
   ).getDate();
   const diaAjustado = Math.min(dia, ultimoDia);
   return `${primeiroDia.getFullYear()}-${String(primeiroDia.getMonth() + 1).padStart(2, "0")}-${String(diaAjustado).padStart(2, "0")}`;
+}
+
+export function dataDaCompetencia(mes: string, dia: number): string {
+  const [ano, numeroMes] = mes.split("-").map(Number);
+  const ultimoDia = new Date(ano, numeroMes, 0).getDate();
+  return `${mes}-${String(Math.min(Math.max(1, dia), ultimoDia)).padStart(2, "0")}`;
+}
+
+export function recorrenciaVigenteNoMes(
+  recorrencia: Pick<RecorrenciaFinanceira, "ativa" | "inicioMes" | "fimMes">,
+  mes: string
+): boolean {
+  return Boolean(
+    recorrencia.ativa &&
+      recorrencia.inicioMes <= mes &&
+      (!recorrencia.fimMes || recorrencia.fimMes >= mes)
+  );
+}
+
+export function criarTransacaoRecorrente(
+  recorrencia: RecorrenciaFinanceira | (NovaRecorrenciaFinanceira & { id: string }),
+  competencia: string,
+  cartao?: CartaoCredito
+): NovaTransacao {
+  const data = dataDaCompetencia(competencia, recorrencia.diaVencimento);
+  const usaCartao = recorrencia.tipo === "despesa" && Boolean(recorrencia.cartaoId);
+
+  return {
+    data,
+    desc: recorrencia.descricao,
+    categoria: recorrencia.categoria,
+    pessoa: recorrencia.pessoa,
+    valor: recorrencia.valor,
+    tipo: recorrencia.tipo,
+    contaId: usaCartao ? "" : recorrencia.contaId ?? "",
+    contaDestinoId: "",
+    cartaoId: usaCartao ? recorrencia.cartaoId : "",
+    cartao: usaCartao ? cartao?.nome ?? recorrencia.cartao ?? "" : "",
+    dataCompra: usaCartao ? data : "",
+    faturaMes: usaCartao && cartao ? mesDaFatura(cartao, data) : "",
+    parcelaAtual: 1,
+    totalParcelas: 1,
+    recorrenciaId: recorrencia.id,
+    competenciaRecorrencia: competencia,
+  };
 }
 
 export function mesDaFatura(cartao: CartaoCredito, dataCompra: string): string {

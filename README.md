@@ -1,7 +1,7 @@
 # Controle Financeiro (Next.js)
 
 Dashboard de controle financeiro compartilhado, feito em Next.js (App Router) + TypeScript,
-com contas, saldos, cartões, faturas, receitas, despesas e transferências sincronizadas em tempo real no Firebase
+com contas, saldos, cartões, fechamento e pagamento de faturas, orçamentos, recorrências, metas financeiras, reserva de emergência, previsão de caixa, receitas, despesas e transferências sincronizadas em tempo real no Firebase
 (Firestore), além de tela de PIN compartilhado.
 
 ## Rodando localmente
@@ -23,7 +23,7 @@ Veja o passo a passo completo em `GUIA_CONFIGURACAO.md` (configuração do Fireb
 
 - `app/page.tsx` — página principal (monta sidebar, formulário, tabela e gráficos)
 - `app/layout.tsx` — fonte (Poppins) e metadados
-- `components/` — contas e saldos, formulário de lançamento, tabela com paginação, gráficos, telas de PIN/configuração
+- `components/` — contas, cartões, orçamentos, recorrências, metas, reserva de emergência, previsão de caixa, formulário, tabela e gráficos
 - `hooks/useAppData.ts` — autenticação anônima + leitura/escrita em tempo real no Firestore
 - `lib/firebase.ts` — inicialização do Firebase a partir das variáveis de ambiente
 - `lib/categories.ts` — categorias, cores e funções de formatação

@@ -25,6 +25,80 @@ export type CartaoCredito = {
 
 export type NovoCartaoCredito = Omit<CartaoCredito, "id">;
 
+export type StatusFatura = "fechada" | "paga";
+
+export type FaturaCartao = {
+  id: string;
+  cartaoId: string;
+  mes: string;
+  status: StatusFatura;
+  valorFechado: number;
+  dataVencimento: string;
+  fechadaEm: string;
+  pagaEm?: string;
+  contaPagamentoId?: string;
+  valorPago?: number;
+  transacaoPagamentoId?: string;
+};
+
+export type NovaFaturaCartao = Omit<FaturaCartao, "id">;
+
+export type OrcamentoMensal = {
+  id: string;
+  mes: string;
+  categoria: string;
+  limite: number;
+  alertaPercentual: number;
+};
+
+export type NovoOrcamentoMensal = Omit<OrcamentoMensal, "id">;
+
+export type TipoRecorrencia = "despesa" | "receita";
+
+export type RecorrenciaFinanceira = {
+  id: string;
+  descricao: string;
+  categoria: string;
+  pessoa: string;
+  valor: number;
+  tipo: TipoRecorrencia;
+  diaVencimento: number;
+  inicioMes: string;
+  fimMes?: string;
+  contaId?: string;
+  cartaoId?: string;
+  cartao?: string;
+  ativa: boolean;
+};
+
+export type NovaRecorrenciaFinanceira = Omit<RecorrenciaFinanceira, "id">;
+
+export type TipoMetaFinanceira = "reserva" | "viagem" | "compra" | "divida" | "outro";
+
+export type MetaFinanceira = {
+  id: string;
+  nome: string;
+  tipo: TipoMetaFinanceira;
+  valorAlvo: number;
+  valorInicial: number;
+  dataAlvo?: string;
+  contaId?: string;
+  cor: string;
+  ativa: boolean;
+};
+
+export type NovaMetaFinanceira = Omit<MetaFinanceira, "id">;
+
+export type MovimentoMeta = {
+  id: string;
+  metaId: string;
+  data: string;
+  valor: number;
+  descricao: string;
+};
+
+export type NovoMovimentoMeta = Omit<MovimentoMeta, "id">;
+
 export type Transacao = {
   id: string;
   data: string;
@@ -46,6 +120,9 @@ export type Transacao = {
   parcelaAtual?: number;
   totalParcelas?: number;
   grupoParcelamentoId?: string;
+  recorrenciaId?: string;
+  competenciaRecorrencia?: string;
+  faturaPagamentoId?: string;
 };
 
 export type NovaTransacao = Omit<Transacao, "id">;

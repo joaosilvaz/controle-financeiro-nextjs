@@ -141,6 +141,7 @@ export default function TransactionsTable({
               {pagina.map((t) => {
                 const cor = CAT_MAP[t.categoria];
                 const tipo = tipoDe(t);
+                const pagamentoFatura = Boolean(t.faturaPagamentoId);
                 const contaOrigem = t.contaId ? contasPorId.get(t.contaId) : undefined;
                 const contaDestino = t.contaDestinoId ? contasPorId.get(t.contaDestinoId) : undefined;
                 return (
@@ -148,8 +149,10 @@ export default function TransactionsTable({
                     <td data-label="Data">{(t.data || "").split("-").reverse().join("/")}</td>
                     <td data-label="Descrição">{t.desc}</td>
                     <td data-label="Tipo">
-                      <span className={`type-chip ${tipo}`}>
-                        {tipo === "receita"
+                      <span className={`type-chip ${pagamentoFatura ? "pagamento-fatura" : tipo}`}>
+                        {pagamentoFatura
+                          ? "Pagamento de fatura"
+                          : tipo === "receita"
                           ? "Receita"
                           : tipo === "transferencia"
                             ? "Transferência"
@@ -170,7 +173,7 @@ export default function TransactionsTable({
                     </td>
                     <td data-label="Conta" className="account-cell">
                       {contaOrigem?.nome ?? "Não vinculada"}
-                      {tipo === "transferencia" && contaDestino ? ` → ${contaDestino.nome}` : ""}
+                      {tipo === "transferencia" && !pagamentoFatura && contaDestino ? ` → ${contaDestino.nome}` : ""}
                     </td>
                     <td data-label="Cartão">
                       {t.cartao || "—"}
@@ -180,12 +183,16 @@ export default function TransactionsTable({
                     </td>
                     <td data-label="Fatura">{t.faturaMes ? mesLabel(t.faturaMes) : "—"}</td>
                     <td data-label="Pessoa" className="pessoa-tag">{t.pessoa || "—"}</td>
-                    <td data-label="Valor" className={`num tx-value ${tipo}`}>
-                      {tipo === "receita" ? "+ " : tipo === "despesa" ? "− " : ""}
+                    <td data-label="Valor" className={`num tx-value ${pagamentoFatura ? "pagamento-fatura" : tipo}`}>
+                      {tipo === "receita" ? "+ " : tipo === "despesa" || pagamentoFatura ? "− " : ""}
                       {fmtMoeda(t.valor)}
                     </td>
                     <td data-label="" style={{ whiteSpace: "nowrap" }}>
                       <div className="row-icon-actions">
+                        {pagamentoFatura ? (
+                          <span className="managed-transaction" title="Gerencie este pagamento pela seção de cartões">Gerenciado pela fatura</span>
+                        ) : (
+                          <>
                         <button aria-label={`Editar ${t.desc}`} className="btn-action edit" onClick={() => onEdit(t)}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M12 20h9" />
@@ -202,6 +209,8 @@ export default function TransactionsTable({
                           </svg>
                           Excluir
                         </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
