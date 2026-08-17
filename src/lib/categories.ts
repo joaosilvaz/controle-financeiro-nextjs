@@ -32,6 +32,44 @@ export const CAT_MAP: Record<string, string> = Object.fromEntries(
   CATEGORIAS.map((c) => [c.nome, c.cor])
 );
 
+export function montarCatalogoCategorias(personalizadas: CategoriaPersonalizada[]) {
+  const adicionarSemDuplicar = (
+    base: readonly CategoriaOpcao[],
+    tipo: CategoriaPersonalizada["tipo"]
+  ): CategoriaOpcao[] => {
+    const nomes = new Set(base.map((categoria) => categoria.nome.toLocaleLowerCase("pt-BR")));
+    const extras = personalizadas
+      .filter((categoria) => categoria.tipo === tipo && categoria.ativa)
+      .filter((categoria) => {
+        const chave = categoria.nome.toLocaleLowerCase("pt-BR");
+        if (nomes.has(chave)) return false;
+        nomes.add(chave);
+        return true;
+      })
+      .map(({ nome, cor }) => ({ nome, cor }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    return [...base, ...extras];
+  };
+
+  const despesas = adicionarSemDuplicar(CATEGORIAS_DESPESA, "despesa");
+  const receitas = adicionarSemDuplicar(CATEGORIAS_RECEITA, "receita");
+  const transferencias: CategoriaOpcao[] = [...CATEGORIAS_TRANSFERENCIA];
+  const cores: Record<string, string> = {
+    ...CAT_MAP,
+    ...Object.fromEntries(personalizadas.map((categoria) => [categoria.nome, categoria.cor])),
+  };
+  return { despesas, receitas, transferencias, cores };
+}
+
+export function categoriasDoCatalogo(
+  tipo: TipoTransacao,
+  catalogo: ReturnType<typeof montarCatalogoCategorias>
+): CategoriaOpcao[] {
+  if (tipo === "receita") return catalogo.receitas;
+  if (tipo === "transferencia") return catalogo.transferencias;
+  return catalogo.despesas;
+}
+
 export function hexToBg(hex: string, alpha = 0.12): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -53,3 +91,6 @@ export function mesLabel(m: string): string {
   const nomes = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
   return `${nomes[parseInt(mes, 10) - 1]}/${ano}`;
 }
+import type { CategoriaPersonalizada, TipoTransacao } from "@/src/lib/types";
+
+export type CategoriaOpcao = { nome: string; cor: string };

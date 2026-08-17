@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CAT_MAP, fmtMoeda, hexToBg, mesLabel } from "@/src/lib/categories";
+import { fmtMoeda, hexToBg, mesLabel } from "@/src/lib/categories";
+import { useCategoryCatalog } from "@/src/components/CategoryCatalogProvider";
 import { tipoDe } from "@/src/lib/finance";
 import type { ContaFinanceira, TipoTransacao, Transacao } from "@/src/lib/types";
 
@@ -18,11 +19,14 @@ export default function TransactionsTable({
   filterPessoa,
   filterConta,
   filterTipo,
+  filterTag,
+  tagsDisponiveis,
   onFilterMonth,
   onFilterCartao,
   onFilterPessoa,
   onFilterConta,
   onFilterTipo,
+  onFilterTag,
   onEdit,
   onDelete,
   onClear,
@@ -38,16 +42,20 @@ export default function TransactionsTable({
   filterPessoa: string;
   filterConta: string;
   filterTipo: TipoTransacao | "";
+  filterTag: string;
+  tagsDisponiveis: string[];
   onFilterMonth: (v: string) => void;
   onFilterCartao: (v: string) => void;
   onFilterPessoa: (v: string) => void;
   onFilterConta: (v: string) => void;
   onFilterTipo: (v: TipoTransacao | "") => void;
+  onFilterTag: (v: string) => void;
   onEdit: (t: Transacao) => void;
   onDelete: (id: string) => void;
   onClear: () => void;
   onExport: () => void;
 }) {
+  const { cores: coresCategorias } = useCategoryCatalog();
   // O pai passa key={filterMonth-filterCartao-filterPessoa}, então trocar de
   // filtro remonta esta tabela e a página volta pra 1 automaticamente —
   // não precisa de useEffect pra isso.
@@ -76,6 +84,10 @@ export default function TransactionsTable({
             <option value="despesa">Despesas</option>
             <option value="receita">Receitas</option>
             <option value="transferencia">Transferências</option>
+          </select>
+          <select aria-label="Filtrar por tag" value={filterTag} onChange={(e) => onFilterTag(e.target.value)}>
+            <option value="">Todas as tags</option>
+            {tagsDisponiveis.map((tag) => <option value={tag} key={tag}>#{tag}</option>)}
           </select>
           <select value={filterMonth} onChange={(e) => onFilterMonth(e.target.value)}>
             <option value="">Todos os meses</option>
@@ -139,7 +151,7 @@ export default function TransactionsTable({
             </thead>
             <tbody>
               {pagina.map((t) => {
-                const cor = CAT_MAP[t.categoria];
+                const cor = coresCategorias[t.categoria];
                 const tipo = tipoDe(t);
                 const pagamentoFatura = Boolean(t.faturaPagamentoId);
                 const contaOrigem = t.contaId ? contasPorId.get(t.contaId) : undefined;
@@ -147,7 +159,15 @@ export default function TransactionsTable({
                 return (
                   <tr key={t.id}>
                     <td data-label="Data">{(t.data || "").split("-").reverse().join("/")}</td>
-                    <td data-label="Descrição">{t.desc}</td>
+                    <td data-label="Descrição">
+                      <span className="transaction-description">{t.desc}</span>
+                      {t.tags?.length ? (
+                        <span className="transaction-tags">
+                          {t.tags.map((tag) => <span key={tag}>#{tag}</span>)}
+                        </span>
+                      ) : null}
+                      {t.nota ? <span className="transaction-note" title={t.nota}>Nota: {t.nota}</span> : null}
+                    </td>
                     <td data-label="Tipo">
                       <span className={`type-chip ${pagamentoFatura ? "pagamento-fatura" : tipo}`}>
                         {pagamentoFatura

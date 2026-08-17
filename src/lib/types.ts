@@ -1,5 +1,6 @@
 export type TipoTransacao = "despesa" | "receita" | "transferencia";
 export type TipoConta = "corrente" | "poupanca" | "dinheiro" | "investimento";
+export type CorrespondenciaRegra = "contem" | "comeca" | "exata";
 
 export type ContaFinanceira = {
   id: string;
@@ -99,6 +100,28 @@ export type MovimentoMeta = {
 
 export type NovoMovimentoMeta = Omit<MovimentoMeta, "id">;
 
+export type RegraCategorizacao = {
+  id: string;
+  termo: string;
+  correspondencia: CorrespondenciaRegra;
+  tipo: Exclude<TipoTransacao, "transferencia">;
+  categoria: string;
+  renomearPara?: string;
+  ativa: boolean;
+};
+
+export type NovaRegraCategorizacao = Omit<RegraCategorizacao, "id">;
+
+export type CategoriaPersonalizada = {
+  id: string;
+  nome: string;
+  tipo: Exclude<TipoTransacao, "transferencia">;
+  cor: string;
+  ativa: boolean;
+};
+
+export type NovaCategoriaPersonalizada = Omit<CategoriaPersonalizada, "id">;
+
 export type Transacao = {
   id: string;
   data: string;
@@ -123,6 +146,13 @@ export type Transacao = {
   recorrenciaId?: string;
   competenciaRecorrencia?: string;
   faturaPagamentoId?: string;
+  /** Identificador estável do lançamento no arquivo de origem, usado para evitar reimportações. */
+  importacaoId?: string;
+  origemImportacao?: "csv" | "ofx";
+  descricaoOriginal?: string;
+  regraCategorizacaoId?: string;
+  tags?: string[];
+  nota?: string;
 };
 
 export type NovaTransacao = Omit<Transacao, "id">;

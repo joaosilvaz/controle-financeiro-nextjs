@@ -17,22 +17,30 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { auth, db, firebaseConfigured } from "@/src/lib/firebase";
+import {
+  aplicarRegrasCategorizacao,
+  regraCombinaComTransacao,
+} from "@/src/lib/categorization-rules";
 import type {
   CartaoCredito,
+  CategoriaPersonalizada,
   ContaFinanceira,
   FaturaCartao,
   MetaFinanceira,
   MovimentoMeta,
   NovaConta,
+  NovaCategoriaPersonalizada,
   NovoCartaoCredito,
   NovaFaturaCartao,
   NovaMetaFinanceira,
   NovoMovimentoMeta,
   NovoOrcamentoMensal,
   NovaRecorrenciaFinanceira,
+  NovaRegraCategorizacao,
   NovaTransacao,
   OrcamentoMensal,
   RecorrenciaFinanceira,
+  RegraCategorizacao,
   Transacao,
 } from "@/src/lib/types";
 
@@ -101,6 +109,8 @@ export function useAppData() {
   const [recorrencias, setRecorrencias] = useState<RecorrenciaFinanceira[]>([]);
   const [metas, setMetas] = useState<MetaFinanceira[]>([]);
   const [movimentosMetas, setMovimentosMetas] = useState<MovimentoMeta[]>([]);
+  const [regrasCategorizacao, setRegrasCategorizacao] = useState<RegraCategorizacao[]>([]);
+  const [categoriasPersonalizadas, setCategoriasPersonalizadas] = useState<CategoriaPersonalizada[]>([]);
   const [pin, setPin] = useState(PIN_PADRAO);
   const [configReady, setConfigReady] = useState(false);
   const [transacoesReady, setTransacoesReady] = useState(false);
@@ -111,6 +121,8 @@ export function useAppData() {
   const [recorrenciasReady, setRecorrenciasReady] = useState(false);
   const [metasReady, setMetasReady] = useState(false);
   const [movimentosMetasReady, setMovimentosMetasReady] = useState(false);
+  const [regrasCategorizacaoReady, setRegrasCategorizacaoReady] = useState(false);
+  const [categoriasPersonalizadasReady, setCategoriasPersonalizadasReady] = useState(false);
 
   useEffect(() => {
     if (!firebaseConfigured || !auth) return;
@@ -337,6 +349,55 @@ export function useAppData() {
       }
     );
 
+    const regrasRef = collection(firestore, "regras_categorizacao");
+    const unsubRegras = onSnapshot(
+      regrasRef,
+      (snap) => {
+        setRegrasCategorizacao(
+          snap.docs
+            .map((regraDoc) => ({
+              id: regraDoc.id,
+              ...(regraDoc.data() as NovaRegraCategorizacao),
+            }))
+            .sort((a, b) => {
+              if (a.ativa !== b.ativa) return a.ativa ? -1 : 1;
+              return a.termo.localeCompare(b.termo, "pt-BR");
+            })
+        );
+        setRegrasCategorizacaoReady(true);
+      },
+      (err) => {
+        console.error("Erro ao carregar regras de categorização", err);
+        setRegrasCategorizacao([]);
+        setRegrasCategorizacaoReady(true);
+      }
+    );
+
+    const categoriasPersonalizadasRef = collection(firestore, "categorias_personalizadas");
+    const unsubCategoriasPersonalizadas = onSnapshot(
+      categoriasPersonalizadasRef,
+      (snap) => {
+        setCategoriasPersonalizadas(
+          snap.docs
+            .map((categoriaDoc) => ({
+              id: categoriaDoc.id,
+              ...(categoriaDoc.data() as NovaCategoriaPersonalizada),
+            }))
+            .sort((a, b) => {
+              if (a.tipo !== b.tipo) return a.tipo.localeCompare(b.tipo);
+              if (a.ativa !== b.ativa) return a.ativa ? -1 : 1;
+              return a.nome.localeCompare(b.nome, "pt-BR");
+            })
+        );
+        setCategoriasPersonalizadasReady(true);
+      },
+      (err) => {
+        console.error("Erro ao carregar categorias personalizadas", err);
+        setCategoriasPersonalizadas([]);
+        setCategoriasPersonalizadasReady(true);
+      }
+    );
+
     return () => {
       unsubConfig();
       unsubTx();
@@ -347,23 +408,31 @@ export function useAppData() {
       unsubRecorrencias();
       unsubMetas();
       unsubMovimentosMetas();
+      unsubRegras();
+      unsubCategoriasPersonalizadas();
     };
   }, [user]);
 
   const addTransacao = useCallback((dados: NovaTransacao) => {
     if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
-    return addDoc(collection(db, "transacoes"), semUndefined(dados));
-  }, []);
+    const dadosCategorizados = aplicarRegrasCategorizacao(dados, regrasCategorizacao);
+    return addDoc(collection(db, "transacoes"), semUndefined(dadosCategorizados));
+  }, [regrasCategorizacao]);
 
   const addTransacoes = useCallback(async (itens: NovaTransacao[]) => {
     if (!db) throw new Error("Sem conexão com o banco de dados.");
     const firestore = db;
-    const batch = writeBatch(firestore);
-    itens.forEach((dados) => {
-      batch.set(doc(collection(firestore, "transacoes")), semUndefined(dados));
-    });
-    await batch.commit();
-  }, []);
+    const itensCategorizados = itens.map((dados) =>
+      aplicarRegrasCategorizacao(dados, regrasCategorizacao)
+    );
+    for (let inicio = 0; inicio < itensCategorizados.length; inicio += 450) {
+      const batch = writeBatch(firestore);
+      itensCategorizados.slice(inicio, inicio + 450).forEach((dados) => {
+        batch.set(doc(collection(firestore, "transacoes")), semUndefined(dados));
+      });
+      await batch.commit();
+    }
+  }, [regrasCategorizacao]);
 
   const updateTransacao = useCallback((id: string, dados: NovaTransacao) => {
     if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
@@ -529,13 +598,14 @@ export function useAppData() {
     const firestore = db;
     const batch = writeBatch(firestore);
     itens.forEach(({ recorrenciaId, competencia, dados }) => {
+      const dadosCategorizados = aplicarRegrasCategorizacao(dados, regrasCategorizacao);
       batch.set(
         doc(firestore, "transacoes", idOcorrenciaRecorrente(recorrenciaId, competencia)),
-        semUndefined(dados)
+        semUndefined(dadosCategorizados)
       );
     });
     await batch.commit();
-  }, []);
+  }, [regrasCategorizacao]);
 
   const addMeta = useCallback((dados: NovaMetaFinanceira) => {
     if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
@@ -562,6 +632,67 @@ export function useAppData() {
     return deleteDoc(doc(db, "movimentos_metas", id));
   }, []);
 
+  const addRegraCategorizacao = useCallback(async (dados: NovaRegraCategorizacao) => {
+    if (!db) throw new Error("Sem conexão com o banco de dados.");
+    const referencia = await addDoc(
+      collection(db, "regras_categorizacao"),
+      semUndefined(dados)
+    );
+    return { id: referencia.id, ...dados } satisfies RegraCategorizacao;
+  }, []);
+
+  const updateRegraCategorizacao = useCallback((id: string, dados: NovaRegraCategorizacao) => {
+    if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
+    return updateDoc(doc(db, "regras_categorizacao", id), semUndefined(dados));
+  }, []);
+
+  const deleteRegraCategorizacao = useCallback((id: string) => {
+    if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
+    return deleteDoc(doc(db, "regras_categorizacao", id));
+  }, []);
+
+  const aplicarRegraCategorizacaoExistentes = useCallback(async (regra: RegraCategorizacao) => {
+    if (!db) throw new Error("Sem conexão com o banco de dados.");
+    const firestore = db;
+    const correspondentes = transacoes.filter((transacao) =>
+      regraCombinaComTransacao(regra, transacao)
+    );
+    for (let inicio = 0; inicio < correspondentes.length; inicio += 450) {
+      const batch = writeBatch(firestore);
+      correspondentes.slice(inicio, inicio + 450).forEach((transacao) => {
+        const { id, ...dados } = transacao;
+        const atualizada = aplicarRegrasCategorizacao(dados, [regra]);
+        batch.update(doc(firestore, "transacoes", id), semUndefined({
+          categoria: atualizada.categoria,
+          desc: atualizada.desc,
+          descricaoOriginal: atualizada.descricaoOriginal,
+          regraCategorizacaoId: atualizada.regraCategorizacaoId,
+        }));
+      });
+      await batch.commit();
+    }
+    return correspondentes.length;
+  }, [transacoes]);
+
+  const addCategoriaPersonalizada = useCallback(async (dados: NovaCategoriaPersonalizada) => {
+    if (!db) throw new Error("Sem conexão com o banco de dados.");
+    const referencia = await addDoc(
+      collection(db, "categorias_personalizadas"),
+      semUndefined(dados)
+    );
+    return { id: referencia.id, ...dados } satisfies CategoriaPersonalizada;
+  }, []);
+
+  const updateCategoriaPersonalizada = useCallback((id: string, dados: NovaCategoriaPersonalizada) => {
+    if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
+    return updateDoc(doc(db, "categorias_personalizadas", id), semUndefined(dados));
+  }, []);
+
+  const deleteCategoriaPersonalizada = useCallback((id: string) => {
+    if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
+    return deleteDoc(doc(db, "categorias_personalizadas", id));
+  }, []);
+
   const updatePin = useCallback((novoPin: string) => {
     if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
     return updateDoc(doc(db, "config", "app"), { pin: novoPin });
@@ -586,7 +717,9 @@ export function useAppData() {
       orcamentosReady &&
       recorrenciasReady &&
       metasReady &&
-      movimentosMetasReady,
+      movimentosMetasReady &&
+      regrasCategorizacaoReady &&
+      categoriasPersonalizadasReady,
     authError,
     transacoes,
     cartoes,
@@ -598,6 +731,8 @@ export function useAppData() {
     recorrencias,
     metas,
     movimentosMetas,
+    regrasCategorizacao,
+    categoriasPersonalizadas,
     pin,
     addTransacao,
     addTransacoes,
@@ -627,6 +762,13 @@ export function useAppData() {
     deleteMeta,
     addMovimentoMeta,
     deleteMovimentoMeta,
+    addRegraCategorizacao,
+    updateRegraCategorizacao,
+    deleteRegraCategorizacao,
+    aplicarRegraCategorizacaoExistentes,
+    addCategoriaPersonalizada,
+    updateCategoriaPersonalizada,
+    deleteCategoriaPersonalizada,
     updatePin,
     clearAll,
   };

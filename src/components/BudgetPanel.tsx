@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import { CATEGORIAS_DESPESA, CAT_MAP, fmtMoeda, mesDe, mesLabel } from "@/src/lib/categories";
+import { fmtMoeda, mesDe, mesLabel } from "@/src/lib/categories";
+import { useCategoryCatalog } from "@/src/components/CategoryCatalogProvider";
 import { mesAnterior, mesAtual, tipoDe } from "@/src/lib/finance";
 import type {
   NovoOrcamentoMensal,
@@ -34,13 +35,17 @@ export default function BudgetPanel({
   onUpdate,
   onDelete,
 }: BudgetPanelProps) {
+  const { despesas: categoriasDespesa, cores: coresCategorias } = useCategoryCatalog();
   const [formAberto, setFormAberto] = useState(false);
   const [editing, setEditing] = useState<OrcamentoMensal | null>(null);
-  const [categoria, setCategoria] = useState(CATEGORIAS_DESPESA[0].nome as string);
+  const [categoria, setCategoria] = useState(categoriasDespesa[0].nome);
   const [limite, setLimite] = useState("");
   const [alertaPercentual, setAlertaPercentual] = useState("80");
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const categoriasDisponiveis = editing && !categoriasDespesa.some((item) => item.nome === editing.categoria)
+    ? [...categoriasDespesa, { nome: editing.categoria, cor: coresCategorias[editing.categoria] ?? "#5b636e" }]
+    : categoriasDespesa;
 
   const gastosPorCategoria = useMemo(() => {
     const gastos = new Map<string, number>();
@@ -101,11 +106,11 @@ export default function BudgetPanel({
   }, [gastosPorCategoria, orcamentosDoMes]);
 
   function abrirNovo() {
-    const primeiraDisponivel = CATEGORIAS_DESPESA.find(
+    const primeiraDisponivel = categoriasDespesa.find(
       (item) => !categoriasOrcadas.has(item.nome)
     );
     setEditing(null);
-    setCategoria(primeiraDisponivel?.nome ?? CATEGORIAS_DESPESA[0].nome);
+    setCategoria(primeiraDisponivel?.nome ?? categoriasDespesa[0].nome);
     setLimite("");
     setAlertaPercentual("80");
     setErro("");
@@ -227,7 +232,7 @@ export default function BudgetPanel({
           <button type="button" className="secondary" onClick={copiarMesAnterior} disabled={salvando}>
             Copiar mês anterior
           </button>
-          <button type="button" onClick={abrirNovo} disabled={categoriasOrcadas.size >= CATEGORIAS_DESPESA.length}>
+          <button type="button" onClick={abrirNovo} disabled={categoriasOrcadas.size >= categoriasDespesa.length}>
             Novo limite
           </button>
         </div>
@@ -268,7 +273,7 @@ export default function BudgetPanel({
               onChange={(event) => setCategoria(event.target.value)}
               disabled={Boolean(editing)}
             >
-              {CATEGORIAS_DESPESA.map((item) => (
+              {categoriasDisponiveis.map((item) => (
                 <option
                   key={item.nome}
                   value={item.nome}
@@ -336,7 +341,7 @@ export default function BudgetPanel({
             return (
               <article className={`budget-card ${status}`} key={orcamento.id}>
                 <div className="budget-card-head">
-                  <span className="budget-category-dot" style={{ backgroundColor: CAT_MAP[orcamento.categoria] ?? "#5b636e" }} />
+                  <span className="budget-category-dot" style={{ backgroundColor: coresCategorias[orcamento.categoria] ?? "#5b636e" }} />
                   <div>
                     <h3>{orcamento.categoria}</h3>
                     <span className={`budget-status ${status}`}>{statusTexto}</span>

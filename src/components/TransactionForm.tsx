@@ -1,11 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import {
-  CATEGORIAS_DESPESA,
-  CATEGORIAS_RECEITA,
-  CATEGORIAS_TRANSFERENCIA,
-} from "@/src/lib/categories";
+import { categoriasDoCatalogo } from "@/src/lib/categories";
+import { useCategoryCatalog } from "@/src/components/CategoryCatalogProvider";
 import { tipoDe } from "@/src/lib/finance";
 import type {
   CartaoCredito,
@@ -19,7 +16,8 @@ function estadoInicial(
   editing: Transacao | null,
   cartoes: CartaoCredito[],
   pessoas: string[],
-  contas: ContaFinanceira[]
+  contas: ContaFinanceira[],
+  categoriaInicial: string
 ): NovaTransacao {
   if (editing) {
     return {
@@ -39,12 +37,14 @@ function estadoInicial(
       parcelaAtual: editing.parcelaAtual,
       totalParcelas: editing.totalParcelas ?? 1,
       grupoParcelamentoId: editing.grupoParcelamentoId,
+      tags: editing.tags ?? [],
+      nota: editing.nota ?? "",
     };
   }
   return {
     data: new Date().toISOString().slice(0, 10),
     desc: "",
-    categoria: CATEGORIAS_DESPESA[0].nome,
+    categoria: categoriaInicial,
     cartao: "",
     pessoa: pessoas[0] || "",
     valor: 0,
@@ -53,13 +53,9 @@ function estadoInicial(
     contaDestinoId: "",
     cartaoId: "",
     totalParcelas: 1,
+    tags: [],
+    nota: "",
   };
-}
-
-function categoriasPorTipo(tipo: TipoTransacao) {
-  if (tipo === "receita") return CATEGORIAS_RECEITA;
-  if (tipo === "transferencia") return CATEGORIAS_TRANSFERENCIA;
-  return CATEGORIAS_DESPESA;
 }
 
 export default function TransactionForm({
@@ -79,16 +75,21 @@ export default function TransactionForm({
   onCancelEdit: () => void;
   onAddPessoa: (nome: string) => Promise<unknown>;
 }) {
+  const catalogo = useCategoryCatalog();
   // Este componente recebe key={editing?.id ?? "novo"} do componente pai:
   // trocar de "adicionar" para "editar" (ou entre itens diferentes) remonta
   // o formulário, então o estado inicial abaixo já nasce correto sem precisar
   // sincronizar via useEffect.
   const [form, setForm] = useState<NovaTransacao>(() =>
-    estadoInicial(editing, cartoes, pessoas, contas)
+    estadoInicial(editing, cartoes, pessoas, contas, catalogo.despesas[0].nome)
   );
+  const [tagsTexto, setTagsTexto] = useState(() => (editing?.tags ?? []).join(", "));
   const [formError, setFormError] = useState("");
   const tipo = form.tipo ?? "despesa";
-  const categorias = categoriasPorTipo(tipo);
+  const categoriasBase = categoriasDoCatalogo(tipo, catalogo);
+  const categorias = form.categoria && !categoriasBase.some((categoria) => categoria.nome === form.categoria)
+    ? [...categoriasBase, { nome: form.categoria, cor: catalogo.cores[form.categoria] ?? "#5b636e" }]
+    : categoriasBase;
   const contasAtivas = contas.filter((conta) => conta.ativa || conta.id === form.contaId);
   const cartoesAtivos = cartoes.filter((cartao) => cartao.ativo || cartao.id === form.cartaoId);
   const pagamentoSelecionado = form.cartaoId
@@ -127,7 +128,7 @@ export default function TransactionForm({
   }
 
   function handleTipo(tipoSelecionado: TipoTransacao) {
-    const categoriasDoTipo = categoriasPorTipo(tipoSelecionado);
+    const categoriasDoTipo = categoriasDoCatalogo(tipoSelecionado, catalogo);
     setForm((formAtual) => ({
       ...formAtual,
       tipo: tipoSelecionado,
@@ -153,9 +154,11 @@ export default function TransactionForm({
       }
     }
     setFormError("");
-    await onSubmit(form);
+    const tags = [...new Set(tagsTexto.split(",").map((tag) => tag.trim()).filter(Boolean))];
+    await onSubmit({ ...form, tags, nota: form.nota?.trim() ?? "" });
     if (!editing) {
-      setForm(estadoInicial(null, cartoes, pessoas, contas));
+      setForm(estadoInicial(null, cartoes, pessoas, contas, catalogo.despesas[0].nome));
+      setTagsTexto("");
     }
   }
 
@@ -320,6 +323,24 @@ export default function TransactionForm({
             required
             value={form.valor || ""}
             onChange={(e) => setForm((f) => ({ ...f, valor: parseFloat(e.target.value) || 0 }))}
+          />
+        </div>
+        <div className="span2">
+          <label>Tags <span className="field-optional">separadas por vírgula</span></label>
+          <input
+            type="text"
+            placeholder="Ex.: casa, reembolsável, viagem"
+            value={tagsTexto}
+            onChange={(e) => setTagsTexto(e.target.value)}
+          />
+        </div>
+        <div className="full">
+          <label>Nota <span className="field-optional">opcional</span></label>
+          <textarea
+            rows={2}
+            placeholder="Contexto, comprovante ou observação sobre este lançamento"
+            value={form.nota ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, nota: e.target.value }))}
           />
         </div>
         <div className="full row-actions">

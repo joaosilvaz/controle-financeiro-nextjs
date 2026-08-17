@@ -2,13 +2,11 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import {
-  CATEGORIAS_DESPESA,
-  CATEGORIAS_RECEITA,
-  CAT_MAP,
   fmtMoeda,
   mesDe,
   mesLabel,
 } from "@/src/lib/categories";
+import { useCategoryCatalog } from "@/src/components/CategoryCatalogProvider";
 import {
   adicionarMesesAoMes,
   criarTransacaoRecorrente,
@@ -45,10 +43,6 @@ type RecurringPanelProps = {
   onGenerate: (itens: OcorrenciaPendente[]) => Promise<unknown>;
 };
 
-function categoriasPorTipo(tipo: TipoRecorrencia) {
-  return tipo === "receita" ? CATEGORIAS_RECEITA : CATEGORIAS_DESPESA;
-}
-
 function dadosSemId(recorrencia: RecorrenciaFinanceira): NovaRecorrenciaFinanceira {
   return {
     descricao: recorrencia.descricao,
@@ -78,13 +72,16 @@ export default function RecurringPanel({
   onDelete,
   onGenerate,
 }: RecurringPanelProps) {
+  const { despesas: categoriasDespesa, receitas: categoriasReceita, cores: coresCategorias } = useCategoryCatalog();
+  const categoriasPorTipo = (tipoSelecionado: TipoRecorrencia) =>
+    tipoSelecionado === "receita" ? categoriasReceita : categoriasDespesa;
   const competenciaAtual = mesAtual();
   const hoje = new Date().toISOString().slice(0, 10);
   const [formAberto, setFormAberto] = useState(false);
   const [editing, setEditing] = useState<RecorrenciaFinanceira | null>(null);
   const [tipo, setTipo] = useState<TipoRecorrencia>("despesa");
   const [descricao, setDescricao] = useState("");
-  const [categoria, setCategoria] = useState(CATEGORIAS_DESPESA[0].nome as string);
+  const [categoria, setCategoria] = useState(categoriasDespesa[0].nome);
   const [valor, setValor] = useState("");
   const [diaVencimento, setDiaVencimento] = useState("10");
   const [inicioMes, setInicioMes] = useState(competenciaAtual);
@@ -95,6 +92,10 @@ export default function RecurringPanel({
   const [erro, setErro] = useState("");
   const [mensagem, setMensagem] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const categoriasAtuaisBase = categoriasPorTipo(tipo);
+  const categoriasAtuais = categoria && !categoriasAtuaisBase.some((item) => item.nome === categoria)
+    ? [...categoriasAtuaisBase, { nome: categoria, cor: coresCategorias[categoria] ?? "#5b636e" }]
+    : categoriasAtuaisBase;
 
   const contasMap = useMemo(
     () => new Map(contas.map((conta) => [conta.id, conta])),
@@ -196,7 +197,7 @@ export default function RecurringPanel({
     setEditing(null);
     setTipo("despesa");
     setDescricao("");
-    setCategoria(CATEGORIAS_DESPESA[0].nome);
+    setCategoria(categoriasDespesa[0].nome);
     setValor("");
     setDiaVencimento("10");
     setInicioMes(competenciaAtual);
@@ -374,7 +375,7 @@ export default function RecurringPanel({
           <div>
             <label htmlFor="recurring-category">Categoria</label>
             <select id="recurring-category" value={categoria} onChange={(event) => setCategoria(event.target.value)}>
-              {categoriasPorTipo(tipo).map((item) => <option key={item.nome}>{item.nome}</option>)}
+              {categoriasAtuais.map((item) => <option key={item.nome}>{item.nome}</option>)}
             </select>
           </div>
           <div>
@@ -433,7 +434,7 @@ export default function RecurringPanel({
                     : "Sem vínculo";
                 return (
                   <article className={`recurring-item${recorrencia.ativa ? "" : " inactive"}`} key={recorrencia.id}>
-                    <span className="recurring-dot" style={{ backgroundColor: CAT_MAP[recorrencia.categoria] ?? "#5b636e" }} />
+                    <span className="recurring-dot" style={{ backgroundColor: coresCategorias[recorrencia.categoria] ?? "#5b636e" }} />
                     <div className="recurring-item-main">
                       <div><strong>{recorrencia.descricao}</strong><span>{recorrencia.categoria} · {origem}</span></div>
                       <small>Todo dia {recorrencia.diaVencimento} · desde {mesLabel(recorrencia.inicioMes)}{recorrencia.fimMes ? ` até ${mesLabel(recorrencia.fimMes)}` : ""}</small>

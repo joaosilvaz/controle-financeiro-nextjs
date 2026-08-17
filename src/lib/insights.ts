@@ -98,6 +98,8 @@ export function gerarAnaliseFinanceira({
   const mes = mesAtual(agora);
   const anterior = adicionarMesesAoMes(mes, -1);
   const hoje = dataLocal(agora);
+  const diasNoMes = new Date(agora.getFullYear(), agora.getMonth() + 1, 0).getDate();
+  const fatorProjecao = diasNoMes / Math.max(1, agora.getDate());
   const gastosAtuais = somarPorCategoria(transacoes, mes);
   const gastosAnteriores = somarPorCategoria(transacoes, anterior);
 
@@ -217,19 +219,29 @@ export function gerarAnaliseFinanceira({
     .map((orcamento) => {
       const gasto = gastosAtuais.get(orcamento.categoria) ?? 0;
       const percentual = orcamento.limite > 0 ? (gasto / orcamento.limite) * 100 : 0;
-      return { orcamento, gasto, percentual };
+      const projecao = gasto * fatorProjecao;
+      return { orcamento, gasto, percentual, projecao };
     })
-    .filter(({ orcamento, percentual }) => percentual >= orcamento.alertaPercentual)
+    .filter(
+      ({ orcamento, percentual, projecao }) =>
+        percentual >= orcamento.alertaPercentual ||
+        (agora.getDate() >= 3 && projecao > orcamento.limite)
+    )
     .sort((a, b) => b.percentual - a.percentual)
     .slice(0, 3)
-    .forEach(({ orcamento, gasto, percentual }) => {
+    .forEach(({ orcamento, gasto, percentual, projecao }) => {
+      const riscoProjetado = percentual < orcamento.alertaPercentual && projecao > orcamento.limite;
       insights.push({
         id: `orcamento-${mes}-${normalizar(orcamento.categoria)}`,
         nivel: percentual >= 100 ? "critico" : "atencao",
-        titulo: percentual >= 100
+        titulo: riscoProjetado
+          ? `${orcamento.categoria} tende a ultrapassar o limite`
+          : percentual >= 100
           ? `Orçamento de ${orcamento.categoria} ultrapassado`
           : `${orcamento.categoria} atingiu ${Math.round(percentual)}% do limite`,
-        descricao: `Foram gastos ${fmtMoeda(gasto)} de ${fmtMoeda(orcamento.limite)} planejados.`,
+        descricao: riscoProjetado
+          ? `Mantido o ritmo atual, a projeção é ${fmtMoeda(projecao)} para um limite de ${fmtMoeda(orcamento.limite)}.`
+          : `Foram gastos ${fmtMoeda(gasto)} de ${fmtMoeda(orcamento.limite)} planejados.`,
         valor: gasto - orcamento.limite,
         acaoLabel: "Ver orçamento",
         acaoDestino: "orcamentos",

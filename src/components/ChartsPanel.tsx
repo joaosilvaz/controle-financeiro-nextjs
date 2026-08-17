@@ -11,7 +11,8 @@ import {
 } from "chart.js";
 import { useMemo } from "react";
 import { Bar, Doughnut } from "react-chartjs-2";
-import { CAT_MAP, fmtMoeda, mesDe, mesLabel } from "@/src/lib/categories";
+import { fmtMoeda, mesDe, mesLabel } from "@/src/lib/categories";
+import { useCategoryCatalog } from "@/src/components/CategoryCatalogProvider";
 import { mesAtual, tipoDe } from "@/src/lib/finance";
 import type { Transacao } from "@/src/lib/types";
 
@@ -24,6 +25,7 @@ export default function ChartsPanel({
   transacoes: Transacao[];
   todasTransacoes: Transacao[];
 }) {
+  const { cores: coresCategorias } = useCategoryCatalog();
   const { catLabels, catData, catColors, monthLabels, incomeData, expenseData } = useMemo(() => {
     const porCategoria: Record<string, number> = {};
     transacoes.forEach((t) => {
@@ -50,12 +52,12 @@ export default function ChartsPanel({
     return {
       catLabels,
       catData: Object.values(porCategoria),
-      catColors: catLabels.map((l) => CAT_MAP[l] || "#999"),
+      catColors: catLabels.map((l) => coresCategorias[l] || "#999"),
       monthLabels: meses.map(mesLabel),
       incomeData: Object.values(receitasPorMes),
       expenseData: Object.values(despesasPorMes),
     };
-  }, [todasTransacoes, transacoes]);
+  }, [coresCategorias, todasTransacoes, transacoes]);
 
   return (
     <div className="panel">
