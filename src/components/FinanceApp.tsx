@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import AccountsPanel from "@/src/components/AccountsPanel";
+import AlertsPanel from "@/src/components/AlertsPanel";
 import BudgetPanel from "@/src/components/BudgetPanel";
 import CardsPanel from "@/src/components/CardsPanel";
 import CategorizationRulesPanel from "@/src/components/CategorizationRulesPanel";
@@ -10,9 +11,12 @@ import { CategoryCatalogProvider } from "@/src/components/CategoryCatalogProvide
 import ChartsPanel from "@/src/components/ChartsPanel";
 import CustomCategoriesPanel from "@/src/components/CustomCategoriesPanel";
 import GoalsPanel from "@/src/components/GoalsPanel";
+import FamilyAuthGate from "@/src/components/FamilyAuthGate";
+import FamilyManager from "@/src/components/FamilyManager";
 import InsightsPanel from "@/src/components/InsightsPanel";
-import PinGate from "@/src/components/PinGate";
+import MonthlyReportPanel from "@/src/components/MonthlyReportPanel";
 import RecurringPanel from "@/src/components/RecurringPanel";
+import RegistryManager from "@/src/components/RegistryManager";
 import SectionTabs from "@/src/components/SectionTabs";
 import Sidebar from "@/src/components/Sidebar";
 import StatsGrid from "@/src/components/StatsGrid";
@@ -46,8 +50,6 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
   const router = useRouter();
   const activeSection = sectionFromPathname(pathname);
 
-  const [storageChecked, setStorageChecked] = useState(false);
-  const [unlocked, setUnlocked] = useState(false);
   const [editing, setEditing] = useState<Transacao | null>(null);
   const [filterMonth, setFilterMonth] = useState(() => mesAtual());
   const [budgetMonth, setBudgetMonth] = useState(() => mesAtual());
@@ -56,15 +58,8 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
   const [filterConta, setFilterConta] = useState("");
   const [filterTipo, setFilterTipo] = useState<TipoTransacao | "">("");
   const [filterTag, setFilterTag] = useState("");
-
-  useEffect(() => {
-    // Leitura única do localStorage (só existe no navegador) para saber se
-    // esta aba já foi desbloqueada antes — padrão comum e intencional de
-    // sincronizar estado do React com um sistema externo no primeiro render.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setUnlocked(localStorage.getItem("cf_desbloqueado") === "sim");
-    setStorageChecked(true);
-  }, []);
+  const [registryOpen, setRegistryOpen] = useState(false);
+  const [familyManagerOpen, setFamilyManagerOpen] = useState(false);
 
   const mesesDisponiveis = useMemo(() => {
     return [...new Set([
@@ -127,14 +122,14 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
     return <SetupGate />;
   }
 
-  if (!storageChecked || !data.ready) {
+  if (!data.authReady || (data.user && !data.user.isAnonymous && !data.perfilReady)) {
     return (
       <div className="gate">
         <div className="gate-card" style={{ textAlign: "center" }}>
           <div className="brand-mark" style={{ margin: "0 auto 14px" }}>
             CF
           </div>
-          <p style={{ margin: 0 }}>Conectando ao banco de dados da família…</p>
+          <p style={{ margin: 0 }}>Verificando o acesso da família…</p>
           {data.authError && (
             <p style={{ color: "var(--danger)", marginTop: 10 }}>{data.authError}</p>
           )}
@@ -143,15 +138,31 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!unlocked) {
+  if (!data.user || data.user.isAnonymous || !data.perfil) {
     return (
-      <PinGate
-        pinCorreto={data.pin}
-        onSucesso={() => {
-          localStorage.setItem("cf_desbloqueado", "sim");
-          setUnlocked(true);
-        }}
+      <FamilyAuthGate
+        usuarioAutenticado={Boolean(data.user && !data.user.isAnonymous)}
+        nomeInicial={data.user?.displayName ?? undefined}
+        emailInicial={data.user?.email ?? undefined}
+        authError={data.authError}
+        onLogin={data.entrar}
+        onRegister={data.cadastrarUsuario}
+        onResetPassword={data.recuperarSenha}
+        onConfigureFamily={data.configurarFamilia}
+        onLogout={data.sair}
       />
+    );
+  }
+
+  if (!data.perfil.ativo) {
+    return (
+      <div className="family-auth-screen"><div className="family-auth-card"><div className="family-auth-brand"><div className="brand-mark">CF</div><div><strong>Acesso pausado</strong><span>Peça a um administrador da família para reativar seu perfil.</span></div></div><button type="button" onClick={data.sair}>Sair desta conta</button></div></div>
+    );
+  }
+
+  if (!data.ready) {
+    return (
+      <div className="gate"><div className="gate-card" style={{ textAlign: "center" }}><div className="brand-mark" style={{ margin: "0 auto 14px" }}>CF</div><p style={{ margin: 0 }}>Sincronizando os dados da família…</p>{data.authError ? <p style={{ color: "var(--danger)", marginTop: 10 }}>{data.authError}</p> : null}</div></div>
     );
   }
 
@@ -159,26 +170,10 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
     if (isDashboardSection(target)) router.push(dashboardPath(target));
   }
 
-  function handleLock() {
-    localStorage.removeItem("cf_desbloqueado");
-    setUnlocked(false);
-  }
-
-  async function handleChangePin() {
-    const atual = prompt("Digite o PIN atual:");
-    if (atual === null) return;
-    if (atual !== data.pin) {
-      alert("PIN atual incorreto.");
-      return;
-    }
-    const novo = prompt("Digite o novo PIN:");
-    if (novo && novo.trim()) {
-      await data.updatePin(novo.trim());
-      alert("PIN atualizado.");
-    }
-  }
-
-  async function handleSubmit(dados: NovaTransacao) {
+  async function handleSubmit(
+    dados: NovaTransacao,
+    opcoes?: { parcelasPagas?: number; primeiraParcelaPendenteMes?: string }
+  ) {
     try {
       if (editing) {
         const cartao = dados.cartaoId
@@ -187,7 +182,6 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
         const dadosAtualizados = cartao
           ? {
               ...dados,
-              contaId: "",
               cartao: cartao.nome,
               faturaMes: adicionarMesesAoMes(
                 mesDaFatura(cartao, dados.dataCompra || dados.data),
@@ -212,7 +206,15 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
           : undefined;
         if (cartao) {
           const grupoId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-          await data.addTransacoes(criarParcelasCartao(dados, cartao, grupoId));
+          await data.addTransacoes(
+            criarParcelasCartao(
+              dados,
+              cartao,
+              grupoId,
+              opcoes?.parcelasPagas ?? 0,
+              opcoes?.primeiraParcelaPendenteMes
+            )
+          );
         } else {
           await data.addTransacao({
             ...dados,
@@ -233,9 +235,35 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Excluir este lançamento?")) return;
-    await data.deleteTransacao(id);
-    if (editing?.id === id) setEditing(null);
+    const transacao = data.transacoes.find((item) => item.id === id);
+    const parcelas = transacao?.grupoParcelamentoId
+      ? data.transacoes.filter(
+          (item) => item.grupoParcelamentoId === transacao.grupoParcelamentoId
+        )
+      : [];
+    let idsParaExcluir = [id];
+
+    if (parcelas.length > 1) {
+      const totalParcelas = transacao?.totalParcelas ?? parcelas.length;
+      const excluirTodas = confirm(
+        `Esta é uma compra de ${totalParcelas} parcelas e há ${parcelas.length} lançamentos cadastrados.\n\n` +
+        "Clique em OK para excluir a compra completa ou em Cancelar para escolher somente esta parcela."
+      );
+      if (excluirTodas) {
+        idsParaExcluir = parcelas.map((parcela) => parcela.id);
+      } else if (!confirm("Excluir somente esta parcela?")) {
+        return;
+      }
+    } else if (!confirm("Excluir este lançamento?")) {
+      return;
+    }
+
+    try {
+      await data.deleteTransacoes(idsParaExcluir);
+      if (editing && idsParaExcluir.includes(editing.id)) setEditing(null);
+    } catch (err) {
+      alert("Erro ao excluir: " + (err instanceof Error ? err.message : String(err)));
+    }
   }
 
   async function handleClear() {
@@ -247,7 +275,7 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
   function handleExport() {
     const escaparCsv = (valor: string | number) =>
       `"${String(valor).replace(/"/g, '""')}"`;
-    const linhas = ["Data,Tipo,Descrição,Categoria,Conta origem,Conta destino,Cartão ou forma,Pessoa,Tags,Nota,Valor"];
+    const linhas = ["Data,Tipo,Descrição,Categoria,Conta origem,Conta destino,Cartão ou forma,Pessoa,Lançado por,Tags,Nota,Valor"];
     transacoesFiltradas.forEach((t) => {
       const contaOrigem = data.contas.find((conta) => conta.id === t.contaId)?.nome ?? "";
       const contaDestino = data.contas.find((conta) => conta.id === t.contaDestinoId)?.nome ?? "";
@@ -261,6 +289,7 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
           contaDestino,
           t.cartao || "",
           t.pessoa || "",
+          t.criadoPorNome || "",
           (t.tags ?? []).join(" | "),
           t.nota || "",
           (t.valor || 0).toFixed(2),
@@ -317,6 +346,24 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
             faturas={data.faturas}
             metas={data.metas}
             movimentosMetas={data.movimentosMetas}
+            onNavigate={handleNavigate}
+          />
+        );
+      case "alertas":
+        return (
+          <AlertsPanel
+            transacoes={data.transacoes}
+            contas={data.contas}
+            saldos={saldosContas}
+            cartoes={data.cartoesCredito}
+            faturas={data.faturas}
+            orcamentos={data.orcamentos}
+            recorrencias={data.recorrencias}
+            metas={data.metas}
+            movimentosMetas={data.movimentosMetas}
+            alertasOcultos={data.alertasOcultos}
+            onSnooze={data.snoozeAlerta}
+            onRestore={data.restoreAlerta}
             onNavigate={handleNavigate}
           />
         );
@@ -472,6 +519,7 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
             onDelete={handleDelete}
             onClear={handleClear}
             onExport={handleExport}
+            onManageRegistries={() => setRegistryOpen(true)}
           />
         );
       case "resumo":
@@ -479,6 +527,16 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
           <ChartsPanel
             transacoes={transacoesDoPeriodo}
             todasTransacoes={transacoesComparacao}
+          />
+        );
+      case "relatorios-mensais":
+        return (
+          <MonthlyReportPanel
+            transacoes={data.transacoes}
+            contas={data.contas}
+            cartoes={data.cartoesCredito}
+            orcamentos={data.orcamentos}
+            mesesDisponiveis={mesesDisponiveis}
           />
         );
     }
@@ -490,8 +548,10 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
         <Sidebar
           activeSection={activeSection}
           synced={data.ready}
-          onLock={handleLock}
-          onChangePin={handleChangePin}
+          profile={data.perfil}
+          familyName={data.familia?.nome}
+          onOpenFamily={() => setFamilyManagerOpen(true)}
+          onLogout={data.sair}
         />
         <main className="main">
           <div className="wrap">
@@ -508,6 +568,37 @@ export default function FinanceApp({ children }: { children: ReactNode }) {
             <section id={activeSection} className="dashboard-page">
               {renderActiveSection()}
             </section>
+            <RegistryManager
+              open={registryOpen}
+              pessoas={data.pessoas}
+              cartoes={data.cartoesCredito}
+              contas={data.contas}
+              transacoes={data.transacoes}
+              onClose={() => setRegistryOpen(false)}
+              onNavigate={handleNavigate}
+              onAddPessoa={data.addPessoa}
+              onUpdatePessoa={async (nomeAtual, novoNome) => {
+                await data.updatePessoa(nomeAtual, novoNome);
+                if (filterPessoa === nomeAtual) setFilterPessoa(novoNome.trim());
+              }}
+              onDeletePessoa={async (nome) => {
+                await data.deletePessoa(nome);
+                if (filterPessoa === nome) setFilterPessoa("");
+              }}
+              onUpdateCartao={data.updateCartaoCredito}
+              onDeleteCartao={data.deleteCartaoCredito}
+              onUpdateConta={data.updateConta}
+              onDeleteConta={data.deleteConta}
+            />
+            <FamilyManager
+              open={familyManagerOpen}
+              familia={data.familia}
+              perfil={data.perfil}
+              membros={data.membros}
+              onClose={() => setFamilyManagerOpen(false)}
+              onUpdateMember={data.updateMembro}
+              onRenewInvite={data.renovarCodigoConvite}
+            />
             {children}
           </div>
         </main>

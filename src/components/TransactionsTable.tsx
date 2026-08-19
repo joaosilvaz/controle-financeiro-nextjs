@@ -31,6 +31,7 @@ export default function TransactionsTable({
   onDelete,
   onClear,
   onExport,
+  onManageRegistries,
 }: {
   transacoes: Transacao[];
   cartoes: string[];
@@ -54,6 +55,7 @@ export default function TransactionsTable({
   onDelete: (id: string) => void;
   onClear: () => void;
   onExport: () => void;
+  onManageRegistries: () => void;
 }) {
   const { cores: coresCategorias } = useCategoryCatalog();
   // O pai passa key={filterMonth-filterCartao-filterPessoa}, então trocar de
@@ -121,6 +123,15 @@ export default function TransactionsTable({
           </select>
         </div>
         <div className="actions-inline">
+          <button className="secondary manage-registries-button" onClick={onManageRegistries}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="8" cy="8" r="3" />
+              <path d="M3 19c.4-3 2-5 5-5s4.6 2 5 5" />
+              <path d="M16 8h5M18.5 5.5v5" />
+              <path d="M16 16h5" />
+            </svg>
+            Gerenciar cadastros
+          </button>
           <button className="secondary" onClick={onExport}>
             Exportar CSV
           </button>
@@ -156,11 +167,21 @@ export default function TransactionsTable({
                 const pagamentoFatura = Boolean(t.faturaPagamentoId);
                 const contaOrigem = t.contaId ? contasPorId.get(t.contaId) : undefined;
                 const contaDestino = t.contaDestinoId ? contasPorId.get(t.contaDestinoId) : undefined;
+                const quantidadeParcelas = Math.max(1, t.totalParcelas ?? 1);
+                const valorTotalCompra = t.valorTotalCompra ?? (t.valor || 0) * quantidadeParcelas;
                 return (
                   <tr key={t.id}>
-                    <td data-label="Data">{(t.data || "").split("-").reverse().join("/")}</td>
+                    <td data-label="Data" className="transaction-date-cell">
+                      <span>{(t.data || "").split("-").reverse().join("/")}</span>
+                      {t.dataCompra && t.dataCompra !== t.data ? (
+                        <small>Compra em {t.dataCompra.split("-").reverse().join("/")}</small>
+                      ) : null}
+                    </td>
                     <td data-label="Descrição">
                       <span className="transaction-description">{t.desc}</span>
+                      {t.criadoPorNome ? (
+                        <span className="transaction-author">Lançado por {t.criadoPorNome}</span>
+                      ) : null}
                       {t.tags?.length ? (
                         <span className="transaction-tags">
                           {t.tags.map((tag) => <span key={tag}>#{tag}</span>)}
@@ -195,17 +216,22 @@ export default function TransactionsTable({
                       {contaOrigem?.nome ?? "Não vinculada"}
                       {tipo === "transferencia" && !pagamentoFatura && contaDestino ? ` → ${contaDestino.nome}` : ""}
                     </td>
-                    <td data-label="Cartão">
-                      {t.cartao || "—"}
-                      {(t.totalParcelas ?? 1) > 1
-                        ? ` · ${t.parcelaAtual ?? 1}/${t.totalParcelas}`
-                        : ""}
+                    <td data-label="Cartão" className="transaction-card-cell">
+                      <span>{t.cartao || "—"}</span>
+                      {quantidadeParcelas > 1 ? (
+                        <small>Parcela {t.parcelaAtual ?? 1} de {quantidadeParcelas}</small>
+                      ) : null}
                     </td>
                     <td data-label="Fatura">{t.faturaMes ? mesLabel(t.faturaMes) : "—"}</td>
                     <td data-label="Pessoa" className="pessoa-tag">{t.pessoa || "—"}</td>
                     <td data-label="Valor" className={`num tx-value ${pagamentoFatura ? "pagamento-fatura" : tipo}`}>
-                      {tipo === "receita" ? "+ " : tipo === "despesa" || pagamentoFatura ? "− " : ""}
-                      {fmtMoeda(t.valor)}
+                      <span>
+                        {tipo === "receita" ? "+ " : tipo === "despesa" || pagamentoFatura ? "− " : ""}
+                        {fmtMoeda(t.valor)}
+                      </span>
+                      {t.cartaoId && quantidadeParcelas > 1 ? (
+                        <small>Total {fmtMoeda(valorTotalCompra)}</small>
+                      ) : null}
                     </td>
                     <td data-label="" style={{ whiteSpace: "nowrap" }}>
                       <div className="row-icon-actions">

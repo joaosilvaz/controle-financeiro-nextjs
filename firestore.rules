@@ -1,0 +1,97 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedInWithAccount() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function hasProfile() {
+      return signedInWithAccount()
+        && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid));
+    }
+
+    function profile() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function activeMember() {
+      return hasProfile() && profile().ativo == true;
+    }
+
+    function admin() {
+      return activeMember() && profile().papel == 'admin';
+    }
+
+    match /familias/{familiaId} {
+      allow get: if (activeMember() && profile().familiaId == familiaId)
+        || (signedInWithAccount()
+          && familiaId == 'principal'
+          && !exists(/databases/$(database)/documents/familias/$(familiaId)));
+      allow list: if false;
+      allow create: if signedInWithAccount()
+        && familiaId == 'principal'
+        && !exists(/databases/$(database)/documents/familias/$(familiaId))
+        && request.resource.data.criadaPorUid == request.auth.uid;
+      allow update: if admin()
+        && profile().familiaId == familiaId
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['nome', 'codigoConvite']);
+      allow delete: if false;
+    }
+
+    match /usuarios/{uid} {
+      allow get: if signedInWithAccount()
+        && (uid == request.auth.uid
+          || (activeMember() && resource.data.familiaId == profile().familiaId));
+      allow list: if activeMember();
+      allow create: if signedInWithAccount()
+        && uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.familiaId == 'principal'
+        && request.resource.data.ativo == true
+        && (
+          (
+            request.resource.data.papel == 'admin'
+            && getAfter(/databases/$(database)/documents/familias/principal).data.criadaPorUid == request.auth.uid
+          )
+          ||
+          (
+            request.resource.data.papel == 'membro'
+            && request.resource.data.codigoConvite
+              == get(/databases/$(database)/documents/familias/principal).data.codigoConvite
+          )
+        );
+      allow update: if (
+          admin()
+          && resource.data.familiaId == profile().familiaId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['papel', 'ativo'])
+        ) || (
+          signedInWithAccount()
+          && uid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome', 'codigoConvite'])
+        );
+      allow delete: if admin()
+        && uid != request.auth.uid
+        && resource.data.familiaId == profile().familiaId;
+    }
+
+    match /{collectionName}/{documentId} {
+      allow read, write: if activeMember()
+        && collectionName in [
+          'config',
+          'transacoes',
+          'contas',
+          'cartoes_credito',
+          'faturas_cartao',
+          'orcamentos',
+          'recorrencias',
+          'metas_financeiras',
+          'movimentos_metas',
+          'regras_categorizacao',
+          'categorias_personalizadas'
+        ];
+    }
+  }
+}

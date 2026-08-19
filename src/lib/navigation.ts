@@ -1,6 +1,7 @@
 export const DASHBOARD_SECTIONS = [
   "visao-geral",
   "insights",
+  "alertas",
   "revisao",
   "regras",
   "categorias",
@@ -13,6 +14,7 @@ export const DASHBOARD_SECTIONS = [
   "novo",
   "lancamentos",
   "resumo",
+  "relatorios-mensais",
 ] as const;
 
 export type DashboardSection = (typeof DASHBOARD_SECTIONS)[number];
@@ -31,7 +33,7 @@ export const NAVIGATION_GROUPS: readonly NavigationGroup[] = [
     label: "Início",
     descricao: "Resumo e análises",
     defaultSection: "visao-geral",
-    sections: ["visao-geral", "insights"],
+    sections: ["visao-geral", "insights", "alertas"],
   },
   {
     id: "movimentacoes",
@@ -66,7 +68,7 @@ export const NAVIGATION_GROUPS: readonly NavigationGroup[] = [
     label: "Relatórios",
     descricao: "Gráficos e evolução",
     defaultSection: "resumo",
-    sections: ["resumo"],
+    sections: ["resumo", "relatorios-mensais"],
   },
 ];
 
@@ -78,6 +80,10 @@ export const SECTION_META: Record<DashboardSection, { titulo: string; descricao:
   insights: {
     titulo: "Insights automáticos",
     descricao: "Veja alertas, tendências e oportunidades encontradas nos seus dados.",
+  },
+  alertas: {
+    titulo: "Alertas e lembretes",
+    descricao: "Acompanhe vencimentos, limites e pendências que exigem atenção.",
   },
   revisao: {
     titulo: "Revisão de lançamentos",
@@ -126,6 +132,10 @@ export const SECTION_META: Record<DashboardSection, { titulo: string; descricao:
   resumo: {
     titulo: "Resumo visual",
     descricao: "Analise a distribuição e a evolução das movimentações.",
+  },
+  "relatorios-mensais": {
+    titulo: "Relatórios mensais",
+    descricao: "Consolide resultados e compare a evolução financeira de cada mês.",
   },
 };
 

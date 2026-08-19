@@ -2,7 +2,7 @@
 
 Dashboard de controle financeiro compartilhado, feito em Next.js (App Router) + TypeScript,
 com contas, saldos, cartões, faturas, orçamentos, recorrências, metas, reserva de emergência, previsão de caixa, importação CSV/OFX, categorias personalizadas, tags, notas, regras automáticas, insights e revisão inteligente sincronizados em tempo real no Firebase
-(Firestore), além de tela de PIN compartilhado.
+(Firestore), além de autenticação individual e gestão de acesso familiar.
 
 ## Rodando localmente
 
@@ -24,7 +24,9 @@ Veja o passo a passo completo em `GUIA_CONFIGURACAO.md` (configuração do Fireb
 - `app/page.tsx` — página principal (monta sidebar, formulário, tabela e gráficos)
 - `app/layout.tsx` — fonte (Poppins) e metadados
 - `components/` — contas, cartões, orçamentos, recorrências, metas, importação de extratos, categorias personalizadas, regras automáticas, insights, revisão, previsão de caixa, formulário, tabela e gráficos
-- `hooks/useAppData.ts` — autenticação anônima + leitura/escrita em tempo real no Firestore
+- `hooks/useAppData.ts` — autenticação familiar + leitura/escrita em tempo real no Firestore
+- `components/FamilyAuthGate.tsx` — login, cadastro e entrada na família por convite
+- `components/FamilyManager.tsx` — membros, papéis, acessos e código de convite
 - `lib/firebase.ts` — inicialização do Firebase a partir das variáveis de ambiente
 - `lib/categories.ts` — categorias, cores e funções de formatação
 - `lib/insights.ts` — análise local de anomalias, tendências, assinaturas, riscos e saúde financeira

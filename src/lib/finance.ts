@@ -98,7 +98,12 @@ export function calcularSaldosContas(
       return;
     }
 
-    if (tipo === "despesa" && transacao.contaId && transacao.contaId in saldos) {
+    if (
+      tipo === "despesa" &&
+      !transacao.cartaoId &&
+      transacao.contaId &&
+      transacao.contaId in saldos
+    ) {
       saldos[transacao.contaId] -= valor;
       return;
     }
@@ -204,26 +209,44 @@ export function mesDaFatura(cartao: CartaoCredito, dataCompra: string): string {
 export function criarParcelasCartao(
   dados: NovaTransacao,
   cartao: CartaoCredito,
-  grupoParcelamentoId: string
+  grupoParcelamentoId: string,
+  parcelasPagas = 0,
+  primeiraParcelaPendenteMes?: string
 ): NovaTransacao[] {
   const quantidade = Math.max(1, Math.min(48, dados.totalParcelas ?? 1));
+  const quantidadePaga = Math.max(0, Math.min(quantidade - 1, parcelasPagas));
   const totalCentavos = Math.round((dados.valor || 0) * 100);
   const baseCentavos = Math.floor(totalCentavos / quantidade);
   const centavosRestantes = totalCentavos - baseCentavos * quantidade;
   const primeiraFatura = mesDaFatura(cartao, dados.data);
+  const valorTotalCompra = totalCentavos / 100;
+  const diaCompra = Number(dados.data.split("-")[2]) || 1;
+  const usaMesPendenteExplicito = quantidadePaga > 0 &&
+    Boolean(primeiraParcelaPendenteMes?.match(/^\d{4}-\d{2}$/));
 
-  return Array.from({ length: quantidade }, (_, indice) => ({
-    ...dados,
-    data: adicionarMesesAData(dados.data, indice),
-    dataCompra: dados.data,
-    valor: (baseCentavos + (indice < centavosRestantes ? 1 : 0)) / 100,
-    contaId: "",
-    contaDestinoId: "",
-    cartaoId: cartao.id,
-    cartao: cartao.nome,
-    faturaMes: adicionarMesesAoMes(primeiraFatura, indice),
-    parcelaAtual: indice + 1,
-    totalParcelas: quantidade,
-    grupoParcelamentoId,
-  }));
+  return Array.from({ length: quantidade }, (_, indice) => {
+    const indicePendente = indice - quantidadePaga;
+    const faturaMes = usaMesPendenteExplicito && indice >= quantidadePaga
+      ? adicionarMesesAoMes(primeiraParcelaPendenteMes!, indicePendente)
+      : adicionarMesesAoMes(primeiraFatura, indice);
+    const dataParcela = usaMesPendenteExplicito && indice >= quantidadePaga
+      ? dataDaCompetencia(faturaMes, diaCompra)
+      : adicionarMesesAData(dados.data, indice);
+
+    return {
+      ...dados,
+      data: dataParcela,
+      dataCompra: dados.data,
+      valor: (baseCentavos + (indice < centavosRestantes ? 1 : 0)) / 100,
+      contaId: dados.contaId ?? "",
+      contaDestinoId: "",
+      cartaoId: cartao.id,
+      cartao: cartao.nome,
+      faturaMes,
+      parcelaAtual: indice + 1,
+      totalParcelas: quantidade,
+      valorTotalCompra,
+      grupoParcelamentoId,
+    };
+  }).slice(quantidadePaga);
 }

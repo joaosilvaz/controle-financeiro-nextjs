@@ -9,6 +9,7 @@ import {
   navigationGroupForSection,
   type DashboardSection,
 } from "@/src/lib/navigation";
+import type { PerfilFamiliar } from "@/src/lib/types";
 
 const GROUP_ICONS: Record<(typeof NAVIGATION_GROUPS)[number]["id"], ReactNode> = {
   inicio: (
@@ -55,13 +56,17 @@ const GROUP_ICONS: Record<(typeof NAVIGATION_GROUPS)[number]["id"], ReactNode> =
 export default function Sidebar({
   activeSection,
   synced,
-  onLock,
-  onChangePin,
+  profile,
+  familyName,
+  onOpenFamily,
+  onLogout,
 }: {
   activeSection: DashboardSection;
   synced: boolean;
-  onLock: () => void;
-  onChangePin: () => void;
+  profile: PerfilFamiliar;
+  familyName?: string;
+  onOpenFamily: () => void;
+  onLogout: () => Promise<unknown>;
 }) {
   const router = useRouter();
   const activeGroup = navigationGroupForSection(activeSection);
@@ -108,14 +113,16 @@ export default function Sidebar({
         </select>
       </label>
       <div className="sidebar-footer">
+        <div className="sidebar-profile">
+          <span>{profile.nome.slice(0, 2).toUpperCase()}</span>
+          <div><strong>{profile.nome}</strong><small>{familyName ?? "Família"} · {profile.papel === "admin" ? "Admin" : "Membro"}</small></div>
+        </div>
         <div className="sync-status">
           <span className={`sync-dot${synced ? "" : " off"}`} />
           <span>{synced ? "Sincronizado" : "Sem conexão"}</span>
         </div>
-        <button onClick={onChangePin}>Alterar PIN</button>
-        <button onClick={onLock} style={{ marginTop: 8 }}>
-          Bloquear tela
-        </button>
+        <button onClick={onOpenFamily}>Gerenciar família</button>
+        <button onClick={() => void onLogout()} style={{ marginTop: 8 }}>Sair</button>
       </div>
     </aside>
   );

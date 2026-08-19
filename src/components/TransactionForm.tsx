@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { categoriasDoCatalogo } from "@/src/lib/categories";
+import { categoriasDoCatalogo, fmtMoeda, mesLabel } from "@/src/lib/categories";
 import { useCategoryCatalog } from "@/src/components/CategoryCatalogProvider";
-import { tipoDe } from "@/src/lib/finance";
+import { adicionarMesesAoMes, mesAtual, mesDaFatura, tipoDe } from "@/src/lib/finance";
 import type {
   CartaoCredito,
   ContaFinanceira,
@@ -36,6 +36,7 @@ function estadoInicial(
       faturaMes: editing.faturaMes,
       parcelaAtual: editing.parcelaAtual,
       totalParcelas: editing.totalParcelas ?? 1,
+      valorTotalCompra: editing.valorTotalCompra,
       grupoParcelamentoId: editing.grupoParcelamentoId,
       tags: editing.tags ?? [],
       nota: editing.nota ?? "",
@@ -71,7 +72,10 @@ export default function TransactionForm({
   pessoas: string[];
   contas: ContaFinanceira[];
   editing: Transacao | null;
-  onSubmit: (dados: NovaTransacao) => Promise<unknown>;
+  onSubmit: (
+    dados: NovaTransacao,
+    opcoes?: { parcelasPagas?: number; primeiraParcelaPendenteMes?: string }
+  ) => Promise<unknown>;
   onCancelEdit: () => void;
   onAddPessoa: (nome: string) => Promise<unknown>;
 }) {
@@ -85,6 +89,10 @@ export default function TransactionForm({
   );
   const [tagsTexto, setTagsTexto] = useState(() => (editing?.tags ?? []).join(", "));
   const [formError, setFormError] = useState("");
+  const [parcelasPagas, setParcelasPagas] = useState(0);
+  const [primeiraParcelaPendenteMes, setPrimeiraParcelaPendenteMes] = useState(() =>
+    adicionarMesesAoMes(mesAtual(), 1)
+  );
   const tipo = form.tipo ?? "despesa";
   const categoriasBase = categoriasDoCatalogo(tipo, catalogo);
   const categorias = form.categoria && !categoriasBase.some((categoria) => categoria.nome === form.categoria)
@@ -92,40 +100,36 @@ export default function TransactionForm({
     : categoriasBase;
   const contasAtivas = contas.filter((conta) => conta.ativa || conta.id === form.contaId);
   const cartoesAtivos = cartoes.filter((cartao) => cartao.ativo || cartao.id === form.cartaoId);
-  const pagamentoSelecionado = form.cartaoId
-    ? `cartao:${form.cartaoId}`
-    : form.contaId
-      ? `conta:${form.contaId}`
-      : "";
-
-  function handlePagamento(valor: string) {
-    const [origem, id] = valor.split(":");
-    if (origem === "cartao") {
-      const cartao = cartoes.find((item) => item.id === id);
-      setForm((atual) => ({
-        ...atual,
-        contaId: "",
-        cartaoId: id,
-        cartao: cartao?.nome ?? "",
-      }));
-    } else if (origem === "conta") {
-      setForm((atual) => ({
-        ...atual,
-        contaId: id,
-        cartaoId: "",
-        cartao: "",
-        totalParcelas: 1,
-      }));
-    } else {
-      setForm((atual) => ({
-        ...atual,
-        contaId: "",
-        cartaoId: "",
-        cartao: "",
-        totalParcelas: 1,
-      }));
-    }
-  }
+  const cartaoSelecionado = cartoes.find((cartao) => cartao.id === form.cartaoId);
+  const quantidadeParcelas = Math.max(1, form.totalParcelas ?? 1);
+  const indiceParcelaAtual = editing
+    ? Math.max(0, (form.parcelaAtual ?? 1) - 1)
+    : Math.min(parcelasPagas, quantidadeParcelas - 1);
+  const parcelasJaPagas = editing ? indiceParcelaAtual : parcelasPagas;
+  const parcelasRestantes = Math.max(1, quantidadeParcelas - indiceParcelaAtual);
+  const valorTotalCompra = editing
+    ? form.valorTotalCompra ?? (form.valor || 0) * quantidadeParcelas
+    : form.valor || 0;
+  const totalCentavos = Math.round(valorTotalCompra * 100);
+  const baseParcelaCentavos = Math.floor(totalCentavos / quantidadeParcelas);
+  const centavosRestantes = totalCentavos - baseParcelaCentavos * quantidadeParcelas;
+  const proximaParcela = (
+    baseParcelaCentavos + (indiceParcelaAtual < centavosRestantes ? 1 : 0)
+  ) / 100;
+  const parcelasDiferentes = centavosRestantes > 0 && quantidadeParcelas > 1;
+  const primeiraFatura = cartaoSelecionado && form.data
+    ? mesDaFatura(cartaoSelecionado, editing ? form.dataCompra || form.data : form.data)
+    : "";
+  const proximaFatura = editing
+    ? form.faturaMes ?? (primeiraFatura
+        ? adicionarMesesAoMes(primeiraFatura, indiceParcelaAtual)
+        : "")
+    : parcelasPagas > 0
+      ? primeiraParcelaPendenteMes
+      : primeiraFatura;
+  const ultimaFatura = proximaFatura
+    ? adicionarMesesAoMes(proximaFatura, parcelasRestantes - 1)
+    : "";
 
   function handleTipo(tipoSelecionado: TipoTransacao) {
     const categoriasDoTipo = categoriasDoCatalogo(tipoSelecionado, catalogo);
@@ -138,6 +142,7 @@ export default function TransactionForm({
       cartao: tipoSelecionado === "despesa" ? formAtual.cartao : "",
       totalParcelas: tipoSelecionado === "despesa" ? formAtual.totalParcelas : 1,
     }));
+    if (tipoSelecionado !== "despesa") setParcelasPagas(0);
     setFormError("");
   }
 
@@ -155,10 +160,19 @@ export default function TransactionForm({
     }
     setFormError("");
     const tags = [...new Set(tagsTexto.split(",").map((tag) => tag.trim()).filter(Boolean))];
-    await onSubmit({ ...form, tags, nota: form.nota?.trim() ?? "" });
+    await onSubmit(
+      { ...form, tags, nota: form.nota?.trim() ?? "" },
+      {
+        parcelasPagas: editing ? 0 : parcelasPagas,
+        primeiraParcelaPendenteMes:
+          !editing && parcelasPagas > 0 ? primeiraParcelaPendenteMes : undefined,
+      }
+    );
     if (!editing) {
       setForm(estadoInicial(null, cartoes, pessoas, contas, catalogo.despesas[0].nome));
       setTagsTexto("");
+      setParcelasPagas(0);
+      setPrimeiraParcelaPendenteMes(adicionarMesesAoMes(mesAtual(), 1));
     }
   }
 
@@ -191,7 +205,7 @@ export default function TransactionForm({
           </select>
         </div>
         <div>
-          <label>Data</label>
+          <label>{form.cartaoId ? editing ? "Data desta parcela" : "Data da compra" : "Data"}</label>
           <input
             type="date"
             required
@@ -200,22 +214,42 @@ export default function TransactionForm({
           />
         </div>
         {tipo === "despesa" ? (
-          <div>
-            <label>Forma de pagamento</label>
-            <select value={pagamentoSelecionado} onChange={(e) => handlePagamento(e.target.value)}>
-              <option value="">Sem vínculo</option>
-              <optgroup label="Contas e dinheiro">
+          <>
+            <div>
+              <label>Conta vinculada</label>
+              <select
+                value={form.contaId ?? ""}
+                onChange={(e) => setForm((f) => ({ ...f, contaId: e.target.value }))}
+              >
+                <option value="">Sem vínculo</option>
                 {contasAtivas.map((conta) => (
-                  <option key={conta.id} value={`conta:${conta.id}`}>{conta.nome}</option>
+                  <option key={conta.id} value={conta.id}>{conta.nome}</option>
                 ))}
-              </optgroup>
-              <optgroup label="Cartões de crédito">
+              </select>
+            </div>
+            <div>
+              <label>Cartão de crédito <span className="field-optional">opcional</span></label>
+              <select
+                value={form.cartaoId ?? ""}
+                onChange={(e) => {
+                  const cartaoId = e.target.value;
+                  const cartao = cartoes.find((item) => item.id === cartaoId);
+                  if (!cartaoId) setParcelasPagas(0);
+                  setForm((f) => ({
+                    ...f,
+                    cartaoId,
+                    cartao: cartao?.nome ?? "",
+                    totalParcelas: cartaoId ? f.totalParcelas ?? 1 : 1,
+                  }));
+                }}
+              >
+                <option value="">Não usar cartão</option>
                 {cartoesAtivos.map((cartao) => (
-                  <option key={cartao.id} value={`cartao:${cartao.id}`}>{cartao.nome}</option>
+                  <option key={cartao.id} value={cartao.id}>{cartao.nome}</option>
                 ))}
-              </optgroup>
-            </select>
-          </div>
+              </select>
+            </div>
+          </>
         ) : tipo === "receita" ? (
           <div>
             <label>Conta de entrada</label>
@@ -281,24 +315,60 @@ export default function TransactionForm({
           </select>
         </div>
         {tipo === "despesa" && form.cartaoId ? (
-          <div>
-            <label>{editing ? "Parcelamento" : "Número de parcelas"}</label>
-            {editing ? (
-              <input
-                disabled
-                value={`${form.parcelaAtual ?? 1}/${form.totalParcelas ?? 1}`}
-              />
-            ) : (
-              <select
-                value={form.totalParcelas ?? 1}
-                onChange={(e) => setForm((f) => ({ ...f, totalParcelas: Number(e.target.value) }))}
-              >
-                {Array.from({ length: 24 }, (_, indice) => indice + 1).map((numero) => (
-                  <option key={numero} value={numero}>{numero}x</option>
-                ))}
-              </select>
-            )}
-          </div>
+          <>
+            <div>
+              <label>{editing ? "Parcela deste lançamento" : "Total de parcelas"}</label>
+              {editing ? (
+                <input
+                  disabled
+                  value={`${form.parcelaAtual ?? 1}/${form.totalParcelas ?? 1}`}
+                />
+              ) : (
+                <select
+                  value={form.totalParcelas ?? 1}
+                  onChange={(e) => {
+                    const totalParcelas = Number(e.target.value);
+                    setForm((f) => ({ ...f, totalParcelas }));
+                    setParcelasPagas((quantidadePaga) =>
+                      Math.min(quantidadePaga, Math.max(0, totalParcelas - 1))
+                    );
+                  }}
+                >
+                  {Array.from({ length: 48 }, (_, indice) => indice + 1).map((numero) => (
+                    <option key={numero} value={numero}>{numero}x</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            {!editing && quantidadeParcelas > 1 ? (
+              <div>
+                <label>Parcelas já pagas</label>
+                <select
+                  value={parcelasPagas}
+                  onChange={(e) => setParcelasPagas(Number(e.target.value))}
+                >
+                  {Array.from({ length: quantidadeParcelas }, (_, numero) => (
+                    <option key={numero} value={numero}>
+                      {numero === 0
+                        ? "Nenhuma — cadastrar desde 1/" + quantidadeParcelas
+                        : `${numero} paga${numero === 1 ? "" : "s"} — iniciar em ${numero + 1}/${quantidadeParcelas}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            {!editing && parcelasPagas > 0 ? (
+              <div>
+                <label>Mês da próxima parcela</label>
+                <input
+                  type="month"
+                  required
+                  value={primeiraParcelaPendenteMes}
+                  onChange={(e) => setPrimeiraParcelaPendenteMes(e.target.value)}
+                />
+              </div>
+            ) : null}
+          </>
         ) : null}
         <div>
           <label>Pessoa</label>
@@ -306,14 +376,22 @@ export default function TransactionForm({
             value={form.pessoa}
             onChange={(e) => setForm((f) => ({ ...f, pessoa: e.target.value }))}
           >
+            <option value="">Sem pessoa</option>
+            {form.pessoa && !pessoas.includes(form.pessoa) ? (
+              <option value={form.pessoa}>{form.pessoa} (histórico)</option>
+            ) : null}
             {pessoas.map((p) => (
-              <option key={p}>{p}</option>
+              <option key={p} value={p}>{p}</option>
             ))}
           </select>
         </div>
         <div>
           <label>
-            {!editing && (form.totalParcelas ?? 1) > 1 ? "Valor total (R$)" : "Valor (R$)"}
+            {form.cartaoId
+              ? editing
+                ? "Valor desta parcela (R$)"
+                : "Valor total da compra (R$)"
+              : "Valor (R$)"}
           </label>
           <input
             type="number"
@@ -325,6 +403,41 @@ export default function TransactionForm({
             onChange={(e) => setForm((f) => ({ ...f, valor: parseFloat(e.target.value) || 0 }))}
           />
         </div>
+        {tipo === "despesa" && form.cartaoId ? (
+          <div className="full installment-preview" aria-live="polite">
+            <div>
+              <span>Valor total</span>
+              <strong>{fmtMoeda(valorTotalCompra)}</strong>
+            </div>
+            <div>
+              <span>Parcelamento</span>
+              <strong>{quantidadeParcelas}x</strong>
+            </div>
+            <div>
+              <span>Valor por parcela</span>
+              <strong>{fmtMoeda(proximaParcela)}</strong>
+              {parcelasDiferentes ? <small>pode variar R$ 0,01 entre parcelas</small> : null}
+            </div>
+            <div>
+              <span>Já pagas</span>
+              <strong>{parcelasJaPagas}</strong>
+            </div>
+            <div>
+              <span>Restantes</span>
+              <strong>{parcelasRestantes}</strong>
+            </div>
+            <p>
+              {editing
+                ? `Esta é a parcela ${form.parcelaAtual ?? 1}/${quantidadeParcelas}. `
+                : parcelasPagas > 0
+                  ? `Serão cadastradas somente as ${parcelasRestantes} parcelas restantes, começando em ${parcelasPagas + 1}/${quantidadeParcelas}. `
+                  : `Serão cadastradas todas as ${quantidadeParcelas} parcelas. `}
+              {proximaFatura ? `Próxima fatura: ${mesLabel(proximaFatura)}. ` : ""}
+              {ultimaFatura ? `Última parcela prevista: ${mesLabel(ultimaFatura)}. ` : ""}
+              A conta vinculada identifica onde a fatura será paga, sem descontar o saldo duas vezes.
+            </p>
+          </div>
+        ) : null}
         <div className="span2">
           <label>Tags <span className="field-optional">separadas por vírgula</span></label>
           <input

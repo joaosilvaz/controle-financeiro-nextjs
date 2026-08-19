@@ -13,7 +13,7 @@ export default function SetupGate() {
         </p>
         <ol>
           <li>Crie um projeto gratuito em <code>console.firebase.google.com</code></li>
-          <li>Ative <strong>Authentication → Anônimo</strong></li>
+          <li>Ative <strong>Authentication → E-mail/senha</strong></li>
           <li>Crie um <strong>Firestore Database</strong></li>
           <li>Copie as chaves do app da Web e cole nas variáveis de ambiente</li>
         </ol>

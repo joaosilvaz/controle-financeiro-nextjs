@@ -1,10 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { onAuthStateChanged, signInAnonymously, type User } from "firebase/auth";
+import {
+  createUserWithEmailAndPassword,
+  EmailAuthProvider,
+  linkWithCredential,
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+  type User,
+} from "firebase/auth";
 import {
   arrayUnion,
   collection,
+  deleteField,
   deleteDoc,
   doc,
   getDoc,
@@ -14,6 +25,8 @@ import {
   setDoc,
   updateDoc,
   addDoc,
+  runTransaction,
+  where,
   writeBatch,
 } from "firebase/firestore";
 import { auth, db, firebaseConfigured } from "@/src/lib/firebase";
@@ -21,11 +34,13 @@ import {
   aplicarRegrasCategorizacao,
   regraCombinaComTransacao,
 } from "@/src/lib/categorization-rules";
+import { tipoDe } from "@/src/lib/finance";
 import type {
   CartaoCredito,
   CategoriaPersonalizada,
   ContaFinanceira,
   FaturaCartao,
+  FamiliaFinanceira,
   MetaFinanceira,
   MovimentoMeta,
   NovaConta,
@@ -39,12 +54,14 @@ import type {
   NovaRegraCategorizacao,
   NovaTransacao,
   OrcamentoMensal,
+  PerfilFamiliar,
   RecorrenciaFinanceira,
   RegraCategorizacao,
   Transacao,
 } from "@/src/lib/types";
 
 const PIN_PADRAO = "1234";
+const FAMILIA_PRINCIPAL_ID = "principal";
 const DEFAULT_CARTOES = ["Cartão principal", "Débito", "Dinheiro"];
 const DEFAULT_PESSOAS = ["João", "Edith", "Coelho"];
 const DEFAULT_CONTAS: ContaFinanceira[] = [
@@ -96,9 +113,38 @@ function idFatura(cartaoId: string, mes: string): string {
   return `${cartaoId}__${mes}`;
 }
 
+function gerarCodigoConvite(): string {
+  const caracteres = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const valores = new Uint32Array(8);
+  globalThis.crypto.getRandomValues(valores);
+  return Array.from(valores, (valor) => caracteres[valor % caracteres.length]).join("");
+}
+
+function mensagemErroAuth(error: unknown): string {
+  const codigo = typeof error === "object" && error && "code" in error
+    ? String((error as { code: unknown }).code)
+    : "";
+  const mensagens: Record<string, string> = {
+    "auth/email-already-in-use": "Este e-mail já possui uma conta. Entre com sua senha.",
+    "auth/invalid-credential": "E-mail ou senha incorretos.",
+    "auth/invalid-email": "Informe um e-mail válido.",
+    "auth/weak-password": "Use uma senha com pelo menos 6 caracteres.",
+    "auth/operation-not-allowed": "Ative o provedor E-mail/senha no Firebase Authentication.",
+    "auth/too-many-requests": "Muitas tentativas. Aguarde um pouco e tente novamente.",
+    "auth/network-request-failed": "Não foi possível conectar ao Firebase. Verifique sua internet.",
+  };
+  return mensagens[codigo] ?? (error instanceof Error ? error.message : "Não foi possível autenticar.");
+}
+
 export function useAppData() {
   const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [perfil, setPerfil] = useState<PerfilFamiliar | null>(null);
+  const [perfilReady, setPerfilReady] = useState(false);
+  const [familia, setFamilia] = useState<FamiliaFinanceira | null>(null);
+  const [membros, setMembros] = useState<PerfilFamiliar[]>([]);
+  const [familiaReady, setFamiliaReady] = useState(false);
   const [transacoes, setTransacoes] = useState<Transacao[]>([]);
   const [cartoes, setCartoes] = useState<string[]>(DEFAULT_CARTOES);
   const [pessoas, setPessoas] = useState<string[]>(DEFAULT_PESSOAS);
@@ -111,6 +157,7 @@ export function useAppData() {
   const [movimentosMetas, setMovimentosMetas] = useState<MovimentoMeta[]>([]);
   const [regrasCategorizacao, setRegrasCategorizacao] = useState<RegraCategorizacao[]>([]);
   const [categoriasPersonalizadas, setCategoriasPersonalizadas] = useState<CategoriaPersonalizada[]>([]);
+  const [alertasOcultos, setAlertasOcultos] = useState<Record<string, string>>({});
   const [pin, setPin] = useState(PIN_PADRAO);
   const [configReady, setConfigReady] = useState(false);
   const [transacoesReady, setTransacoesReady] = useState(false);
@@ -126,18 +173,81 @@ export function useAppData() {
 
   useEffect(() => {
     if (!firebaseConfigured || !auth) return;
-    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
-    signInAnonymously(auth).catch((err) => {
-      console.error("Erro ao autenticar", err);
-      setAuthError(
-        "Não foi possível conectar ao banco de dados. Verifique se a Autenticação Anônima está ativada no Firebase e sua internet."
-      );
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthReady(true);
+      setAuthError(null);
+      if (!u || u.isAnonymous) {
+        setPerfil(null);
+        setFamilia(null);
+        setMembros([]);
+        setPerfilReady(true);
+        setFamiliaReady(true);
+      } else {
+        setPerfilReady(false);
+        setFamiliaReady(false);
+      }
     });
     return () => unsub();
   }, []);
 
   useEffect(() => {
-    if (!user || !db) return;
+    if (!user || user.isAnonymous || !db) return;
+    const unsubPerfil = onSnapshot(
+      doc(db, "usuarios", user.uid),
+      (snap) => {
+        setPerfil(snap.exists() ? snap.data() as PerfilFamiliar : null);
+        setFamiliaReady(!snap.exists());
+        setPerfilReady(true);
+      },
+      (err) => {
+        console.error("Erro ao carregar perfil familiar", err);
+        setAuthError("Não foi possível carregar seu perfil familiar.");
+        setPerfilReady(true);
+      }
+    );
+    return () => unsubPerfil();
+  }, [user]);
+
+  useEffect(() => {
+    if (!perfil?.familiaId || !db) return;
+    const unsubFamilia = onSnapshot(
+      doc(db, "familias", perfil.familiaId),
+      (snap) => {
+        setFamilia(
+          snap.exists()
+            ? { id: snap.id, ...(snap.data() as Omit<FamiliaFinanceira, "id">) }
+            : null
+        );
+        setFamiliaReady(true);
+      },
+      (err) => {
+        console.error("Erro ao carregar família", err);
+        setAuthError("Não foi possível carregar os dados da família.");
+        setFamiliaReady(true);
+      }
+    );
+    const membrosQuery = query(
+      collection(db, "usuarios"),
+      where("familiaId", "==", perfil.familiaId)
+    );
+    const unsubMembros = onSnapshot(
+      membrosQuery,
+      (snap) => setMembros(
+        snap.docs
+          .map((membroDoc) => membroDoc.data() as PerfilFamiliar)
+          .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
+      ),
+      (err) => console.error("Erro ao carregar membros", err)
+    );
+    return () => {
+      unsubFamilia();
+      unsubMembros();
+    };
+  }, [perfil?.familiaId]);
+
+  useEffect(() => {
+    if (!user || user.isAnonymous || !perfil?.ativo || !db) return;
     const firestore = db;
 
     const configRef = doc(firestore, "config", "app");
@@ -153,8 +263,13 @@ export function useAppData() {
       (snap) => {
         const data = snap.data();
         if (!data) return;
-        if (Array.isArray(data.cartoes) && data.cartoes.length) setCartoes(data.cartoes);
-        if (Array.isArray(data.pessoas) && data.pessoas.length) setPessoas(data.pessoas);
+        if (Array.isArray(data.cartoes)) setCartoes(data.cartoes);
+        if (Array.isArray(data.pessoas)) setPessoas(data.pessoas);
+        setAlertasOcultos(
+          data.alertasOcultos && typeof data.alertasOcultos === "object"
+            ? data.alertasOcultos as Record<string, string>
+            : {}
+        );
         setPin(typeof data.pin === "string" ? data.pin : PIN_PADRAO);
         setConfigReady(true);
       },
@@ -411,19 +526,187 @@ export function useAppData() {
       unsubRegras();
       unsubCategoriasPersonalizadas();
     };
+  }, [perfil?.ativo, perfil?.uid, user]);
+
+  const entrar = useCallback(async (email: string, senha: string) => {
+    if (!auth) throw new Error("Firebase não configurado.");
+    setAuthError(null);
+    try {
+      if (auth.currentUser?.isAnonymous) await signOut(auth);
+      await signInWithEmailAndPassword(auth, email.trim(), senha);
+    } catch (error) {
+      const mensagem = mensagemErroAuth(error);
+      setAuthError(mensagem);
+      throw new Error(mensagem);
+    }
+  }, []);
+
+  const cadastrarUsuario = useCallback(async (
+    nome: string,
+    email: string,
+    senha: string
+  ) => {
+    if (!auth) throw new Error("Firebase não configurado.");
+    const nomeLimpo = nome.trim();
+    if (!nomeLimpo) throw new Error("Informe seu nome.");
+    setAuthError(null);
+    try {
+      const usuarioAtual = auth.currentUser;
+      const credencial = usuarioAtual?.isAnonymous
+        ? await linkWithCredential(
+            usuarioAtual,
+            EmailAuthProvider.credential(email.trim(), senha)
+          )
+        : await createUserWithEmailAndPassword(auth, email.trim(), senha);
+      await updateProfile(credencial.user, { displayName: nomeLimpo });
+      setUser(auth.currentUser);
+    } catch (error) {
+      const mensagem = mensagemErroAuth(error);
+      setAuthError(mensagem);
+      throw new Error(mensagem);
+    }
+  }, []);
+
+  const recuperarSenha = useCallback(async (email: string) => {
+    if (!auth) throw new Error("Firebase não configurado.");
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+    } catch (error) {
+      throw new Error(mensagemErroAuth(error));
+    }
+  }, []);
+
+  const configurarFamilia = useCallback(async (dados: {
+    modo: "criar" | "entrar";
+    nomeUsuario: string;
+    nomeFamilia?: string;
+    codigoConvite?: string;
+  }) => {
+    if (!db || !user || user.isAnonymous) {
+      throw new Error("Entre com uma conta individual antes de configurar a família.");
+    }
+    const firestore = db;
+    const familiaRef = doc(firestore, "familias", FAMILIA_PRINCIPAL_ID);
+    const perfilRef = doc(firestore, "usuarios", user.uid);
+    const agora = new Date().toISOString();
+    const nomeUsuario = dados.nomeUsuario.trim() || user.displayName || user.email || "Membro";
+
+    try {
+      if (dados.modo === "criar") {
+        await runTransaction(firestore, async (transaction) => {
+        const familiaSnap = await transaction.get(familiaRef);
+        if (familiaSnap.exists()) {
+          throw new Error("A família principal já existe. Entre usando o código de convite.");
+        }
+        const nomeFamilia = dados.nomeFamilia?.trim();
+        if (!nomeFamilia) throw new Error("Informe um nome para a família.");
+        transaction.set(familiaRef, {
+          nome: nomeFamilia,
+          codigoConvite: gerarCodigoConvite(),
+          criadaPorUid: user.uid,
+          criadaEm: agora,
+        });
+        const novoPerfil: PerfilFamiliar = {
+          uid: user.uid,
+          nome: nomeUsuario,
+          email: user.email ?? "",
+          papel: "admin",
+          familiaId: FAMILIA_PRINCIPAL_ID,
+          ativo: true,
+          criadoEm: agora,
+        };
+        transaction.set(perfilRef, novoPerfil);
+        });
+      } else {
+        const codigoInformado = dados.codigoConvite?.trim().toUpperCase();
+        if (!codigoInformado) throw new Error("Informe o código de convite.");
+
+        // Em regras antigas/permissivas, valida também no cliente. Com as regras
+        // seguras, a leitura externa é negada e o próprio Firestore compara o código.
+        try {
+          const familiaSnap = await getDoc(familiaRef);
+          if (!familiaSnap.exists()) {
+            throw new Error("Nenhuma família foi criada ainda. Crie a família principal primeiro.");
+          }
+          if (codigoInformado !== String(familiaSnap.data().codigoConvite ?? "").toUpperCase()) {
+            throw new Error("Código de convite inválido.");
+          }
+        } catch (error) {
+          const codigo = typeof error === "object" && error && "code" in error
+            ? String((error as { code: unknown }).code)
+            : "";
+          if (codigo !== "permission-denied" && codigo !== "firestore/permission-denied") throw error;
+        }
+
+        await setDoc(perfilRef, {
+          uid: user.uid,
+          nome: nomeUsuario,
+          email: user.email ?? "",
+          papel: "membro",
+          familiaId: FAMILIA_PRINCIPAL_ID,
+          ativo: true,
+          criadoEm: agora,
+          codigoConvite: codigoInformado,
+        });
+        await updateDoc(perfilRef, { codigoConvite: deleteField() });
+      }
+    } catch (error) {
+      const codigo = typeof error === "object" && error && "code" in error
+        ? String((error as { code: unknown }).code)
+        : "";
+      const mensagem = dados.modo === "entrar" && codigo.includes("permission-denied")
+        ? "Código de convite inválido."
+        : error instanceof Error
+          ? error.message
+          : "Não foi possível configurar a família.";
+      setAuthError(mensagem);
+      throw new Error(mensagem);
+    }
   }, [user]);
+
+  const sair = useCallback(async () => {
+    if (!auth) return;
+    await signOut(auth);
+  }, []);
+
+  const updateMembro = useCallback(async (
+    uid: string,
+    alteracoes: Partial<Pick<PerfilFamiliar, "papel" | "ativo">>
+  ) => {
+    if (!db || perfil?.papel !== "admin") throw new Error("Apenas administradores podem alterar membros.");
+    if (uid === perfil.uid && (alteracoes.ativo === false || alteracoes.papel === "membro")) {
+      throw new Error("Você não pode remover seu próprio acesso de administrador.");
+    }
+    await updateDoc(doc(db, "usuarios", uid), alteracoes);
+  }, [perfil]);
+
+  const renovarCodigoConvite = useCallback(async () => {
+    if (!db || !familia || perfil?.papel !== "admin") {
+      throw new Error("Apenas administradores podem renovar o convite.");
+    }
+    await updateDoc(doc(db, "familias", familia.id), { codigoConvite: gerarCodigoConvite() });
+  }, [familia, perfil]);
+
+  const autoriaCriacao = useCallback(() => ({
+    criadoPorUid: perfil?.uid,
+    criadoPorNome: perfil?.nome,
+    criadoEm: new Date().toISOString(),
+  }), [perfil?.nome, perfil?.uid]);
 
   const addTransacao = useCallback((dados: NovaTransacao) => {
     if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
     const dadosCategorizados = aplicarRegrasCategorizacao(dados, regrasCategorizacao);
-    return addDoc(collection(db, "transacoes"), semUndefined(dadosCategorizados));
-  }, [regrasCategorizacao]);
+    return addDoc(
+      collection(db, "transacoes"),
+      semUndefined({ ...dadosCategorizados, ...autoriaCriacao() })
+    );
+  }, [autoriaCriacao, regrasCategorizacao]);
 
   const addTransacoes = useCallback(async (itens: NovaTransacao[]) => {
     if (!db) throw new Error("Sem conexão com o banco de dados.");
     const firestore = db;
     const itensCategorizados = itens.map((dados) =>
-      aplicarRegrasCategorizacao(dados, regrasCategorizacao)
+      ({ ...aplicarRegrasCategorizacao(dados, regrasCategorizacao), ...autoriaCriacao() })
     );
     for (let inicio = 0; inicio < itensCategorizados.length; inicio += 450) {
       const batch = writeBatch(firestore);
@@ -432,17 +715,136 @@ export function useAppData() {
       });
       await batch.commit();
     }
-  }, [regrasCategorizacao]);
+  }, [autoriaCriacao, regrasCategorizacao]);
 
   const updateTransacao = useCallback((id: string, dados: NovaTransacao) => {
     if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
-    return updateDoc(doc(db, "transacoes", id), semUndefined(dados));
-  }, []);
+    return updateDoc(doc(db, "transacoes", id), semUndefined({
+      ...dados,
+      atualizadoPorUid: perfil?.uid,
+      atualizadoPorNome: perfil?.nome,
+      atualizadoEm: new Date().toISOString(),
+    }));
+  }, [perfil?.nome, perfil?.uid]);
+
+  const deleteTransacoes = useCallback(async (ids: string[]) => {
+    if (!db) throw new Error("Sem conexão com o banco de dados.");
+
+    const firestore = db;
+    const idsUnicos = [...new Set(ids)].filter(Boolean);
+    if (!idsUnicos.length) return;
+
+    const idsExcluidos = new Set(idsUnicos);
+    const removidas = transacoes.filter((transacao) => idsExcluidos.has(transacao.id));
+    const nomesCartoes = new Map(cartoesCredito.map((cartao) => [cartao.id, cartao.nome]));
+    const ajustesFaturas = faturas.flatMap((fatura) => {
+      const pertenceAFatura = (transacao: Transacao) => {
+        if (tipoDe(transacao) !== "despesa" || transacao.faturaMes !== fatura.mes) return false;
+        if (transacao.cartaoId) return transacao.cartaoId === fatura.cartaoId;
+        return transacao.cartao === nomesCartoes.get(fatura.cartaoId);
+      };
+      const valorRemovido = removidas
+        .filter(pertenceAFatura)
+        .reduce((total, transacao) => total + (transacao.valor || 0), 0);
+      if (valorRemovido <= 0) return [];
+
+      const novoValorFechado = Math.max(0, fatura.valorFechado - valorRemovido);
+      const transacaoPagamentoId =
+        fatura.transacaoPagamentoId ?? `pag_fatura__${fatura.id}`;
+      const pagamento = transacoes.find(
+        (transacao) =>
+          transacao.id === transacaoPagamentoId || transacao.faturaPagamentoId === fatura.id
+      );
+      const novoValorPago = fatura.status === "paga"
+        ? Math.max(0, (fatura.valorPago ?? pagamento?.valor ?? fatura.valorFechado) - valorRemovido)
+        : undefined;
+
+      return [{ fatura, novoValorFechado, novoValorPago, pagamento }];
+    });
+
+    const batch = writeBatch(firestore);
+    idsUnicos.forEach((id) => batch.delete(doc(firestore, "transacoes", id)));
+
+    ajustesFaturas.forEach(({ fatura, novoValorFechado, novoValorPago, pagamento }) => {
+      const faturaRef = doc(firestore, "faturas_cartao", fatura.id);
+      if (novoValorFechado <= 0) {
+        batch.delete(faturaRef);
+      } else if (fatura.status === "paga" && novoValorPago && novoValorPago > 0) {
+        batch.set(faturaRef, semUndefined({
+          cartaoId: fatura.cartaoId,
+          mes: fatura.mes,
+          status: fatura.status,
+          valorFechado: novoValorFechado,
+          dataVencimento: fatura.dataVencimento,
+          fechadaEm: fatura.fechadaEm,
+          pagaEm: fatura.pagaEm,
+          contaPagamentoId: fatura.contaPagamentoId,
+          valorPago: novoValorPago,
+          transacaoPagamentoId: fatura.transacaoPagamentoId,
+        }));
+      } else {
+        batch.set(faturaRef, {
+          cartaoId: fatura.cartaoId,
+          mes: fatura.mes,
+          status: "fechada",
+          valorFechado: novoValorFechado,
+          dataVencimento: fatura.dataVencimento,
+          fechadaEm: fatura.fechadaEm,
+        });
+      }
+
+      if (!pagamento || idsExcluidos.has(pagamento.id)) return;
+      if (!novoValorPago || novoValorPago <= 0 || novoValorFechado <= 0) {
+        batch.delete(doc(firestore, "transacoes", pagamento.id));
+      } else {
+        batch.update(doc(firestore, "transacoes", pagamento.id), { valor: novoValorPago });
+      }
+    });
+
+    const transacoesAnteriores = transacoes;
+    const faturasAnteriores = faturas;
+    setTransacoes((atuais) => atuais
+      .filter((transacao) => !idsExcluidos.has(transacao.id))
+      .flatMap((transacao) => {
+        const ajuste = ajustesFaturas.find(({ pagamento }) => pagamento?.id === transacao.id);
+        if (!ajuste) return [transacao];
+        if (!ajuste.novoValorPago || ajuste.novoValorPago <= 0 || ajuste.novoValorFechado <= 0) return [];
+        return [{ ...transacao, valor: ajuste.novoValorPago }];
+      }));
+    setFaturas((atuais) => atuais.flatMap((faturaAtual) => {
+      const ajuste = ajustesFaturas.find(({ fatura }) => fatura.id === faturaAtual.id);
+      if (!ajuste) return [faturaAtual];
+      if (ajuste.novoValorFechado <= 0) return [];
+      if (faturaAtual.status === "paga" && ajuste.novoValorPago && ajuste.novoValorPago > 0) {
+        return [{
+          ...faturaAtual,
+          valorFechado: ajuste.novoValorFechado,
+          valorPago: ajuste.novoValorPago,
+        }];
+      }
+      return [{
+        id: faturaAtual.id,
+        cartaoId: faturaAtual.cartaoId,
+        mes: faturaAtual.mes,
+        status: "fechada" as const,
+        valorFechado: ajuste.novoValorFechado,
+        dataVencimento: faturaAtual.dataVencimento,
+        fechadaEm: faturaAtual.fechadaEm,
+      }];
+    }));
+
+    try {
+      await batch.commit();
+    } catch (error) {
+      setTransacoes(transacoesAnteriores);
+      setFaturas(faturasAnteriores);
+      throw error;
+    }
+  }, [cartoesCredito, faturas, transacoes]);
 
   const deleteTransacao = useCallback((id: string) => {
-    if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
-    return deleteDoc(doc(db, "transacoes", id));
-  }, []);
+    return deleteTransacoes([id]);
+  }, [deleteTransacoes]);
 
   const addCartao = useCallback((nome: string) => {
     if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
@@ -453,6 +855,47 @@ export function useAppData() {
     if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
     return updateDoc(doc(db, "config", "app"), { pessoas: arrayUnion(nome) });
   }, []);
+
+  const updatePessoa = useCallback(async (nomeAtual: string, novoNome: string) => {
+    if (!db) throw new Error("Sem conexão com o banco de dados.");
+    const nomeLimpo = novoNome.trim();
+    if (!nomeLimpo) throw new Error("Informe um nome válido.");
+    if (
+      pessoas.some(
+        (pessoa) => pessoa !== nomeAtual && pessoa.toLocaleLowerCase("pt-BR") === nomeLimpo.toLocaleLowerCase("pt-BR")
+      )
+    ) {
+      throw new Error("Já existe uma pessoa com esse nome.");
+    }
+
+    await updateDoc(doc(db, "config", "app"), {
+      pessoas: pessoas.map((pessoa) => (pessoa === nomeAtual ? nomeLimpo : pessoa)),
+    });
+
+    const referencias = [
+      ...transacoes
+        .filter((transacao) => transacao.pessoa === nomeAtual)
+        .map((transacao) => doc(db!, "transacoes", transacao.id)),
+      ...recorrencias
+        .filter((recorrencia) => recorrencia.pessoa === nomeAtual)
+        .map((recorrencia) => doc(db!, "recorrencias", recorrencia.id)),
+    ];
+
+    for (let inicio = 0; inicio < referencias.length; inicio += 450) {
+      const batch = writeBatch(db);
+      referencias.slice(inicio, inicio + 450).forEach((referencia) => {
+        batch.update(referencia, { pessoa: nomeLimpo });
+      });
+      await batch.commit();
+    }
+  }, [pessoas, recorrencias, transacoes]);
+
+  const deletePessoa = useCallback((nome: string) => {
+    if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
+    return updateDoc(doc(db, "config", "app"), {
+      pessoas: pessoas.filter((pessoa) => pessoa !== nome),
+    });
+  }, [pessoas]);
 
   const addConta = useCallback((dados: NovaConta) => {
     if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
@@ -474,10 +917,29 @@ export function useAppData() {
     return addDoc(collection(db, "cartoes_credito"), dados);
   }, []);
 
-  const updateCartaoCredito = useCallback((id: string, dados: NovoCartaoCredito) => {
-    if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
-    return updateDoc(doc(db, "cartoes_credito", id), dados);
-  }, []);
+  const updateCartaoCredito = useCallback(async (id: string, dados: NovoCartaoCredito) => {
+    if (!db) throw new Error("Sem conexão com o banco de dados.");
+    const cartaoAtual = cartoesCredito.find((cartao) => cartao.id === id);
+    await updateDoc(doc(db, "cartoes_credito", id), dados);
+    if (!cartaoAtual || cartaoAtual.nome === dados.nome) return;
+
+    const referencias = [
+      ...transacoes
+        .filter((transacao) => transacao.cartaoId === id || transacao.cartao === cartaoAtual.nome)
+        .map((transacao) => doc(db!, "transacoes", transacao.id)),
+      ...recorrencias
+        .filter((recorrencia) => recorrencia.cartaoId === id || recorrencia.cartao === cartaoAtual.nome)
+        .map((recorrencia) => doc(db!, "recorrencias", recorrencia.id)),
+    ];
+
+    for (let inicio = 0; inicio < referencias.length; inicio += 450) {
+      const batch = writeBatch(db);
+      referencias.slice(inicio, inicio + 450).forEach((referencia) => {
+        batch.update(referencia, { cartao: dados.nome });
+      });
+      await batch.commit();
+    }
+  }, [cartoesCredito, recorrencias, transacoes]);
 
   const deleteCartaoCredito = useCallback((id: string) => {
     if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
@@ -526,11 +988,12 @@ export function useAppData() {
       faturaMes: fatura.mes,
       totalParcelas: 1,
       faturaPagamentoId: fatura.id,
+      ...autoriaCriacao(),
     };
     batch.set(doc(firestore, "faturas_cartao", fatura.id), semUndefined(faturaAtualizada));
     batch.set(doc(firestore, "transacoes", transacaoPagamentoId), semUndefined(transacaoPagamento));
     await batch.commit();
-  }, []);
+  }, [autoriaCriacao]);
 
   const reabrirFatura = useCallback(async (fatura: FaturaCartao) => {
     if (!db) throw new Error("Sem conexão com o banco de dados.");
@@ -598,14 +1061,17 @@ export function useAppData() {
     const firestore = db;
     const batch = writeBatch(firestore);
     itens.forEach(({ recorrenciaId, competencia, dados }) => {
-      const dadosCategorizados = aplicarRegrasCategorizacao(dados, regrasCategorizacao);
+      const dadosCategorizados = {
+        ...aplicarRegrasCategorizacao(dados, regrasCategorizacao),
+        ...autoriaCriacao(),
+      };
       batch.set(
         doc(firestore, "transacoes", idOcorrenciaRecorrente(recorrenciaId, competencia)),
         semUndefined(dadosCategorizados)
       );
     });
     await batch.commit();
-  }, [regrasCategorizacao]);
+  }, [autoriaCriacao, regrasCategorizacao]);
 
   const addMeta = useCallback((dados: NovaMetaFinanceira) => {
     if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
@@ -698,6 +1164,24 @@ export function useAppData() {
     return updateDoc(doc(db, "config", "app"), { pin: novoPin });
   }, []);
 
+  const snoozeAlerta = useCallback((id: string, dias: number) => {
+    if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
+    const data = new Date();
+    data.setHours(12, 0, 0, 0);
+    data.setDate(data.getDate() + Math.max(1, dias));
+    const ocultoAte = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+    return updateDoc(doc(db, "config", "app"), {
+      alertasOcultos: { ...alertasOcultos, [id]: ocultoAte },
+    });
+  }, [alertasOcultos]);
+
+  const restoreAlerta = useCallback((id: string) => {
+    if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
+    const atualizados = { ...alertasOcultos };
+    delete atualizados[id];
+    return updateDoc(doc(db, "config", "app"), { alertasOcultos: atualizados });
+  }, [alertasOcultos]);
+
   const clearAll = useCallback(() => {
     if (!db) return Promise.reject(new Error("Sem conexão com o banco de dados."));
     return Promise.all([
@@ -708,7 +1192,9 @@ export function useAppData() {
 
   return {
     ready:
-      Boolean(user) &&
+      Boolean(user && !user.isAnonymous && perfil?.ativo) &&
+      perfilReady &&
+      familiaReady &&
       configReady &&
       transacoesReady &&
       contasReady &&
@@ -720,7 +1206,14 @@ export function useAppData() {
       movimentosMetasReady &&
       regrasCategorizacaoReady &&
       categoriasPersonalizadasReady,
+    authReady,
+    perfilReady,
+    familiaReady,
     authError,
+    user,
+    perfil,
+    familia,
+    membros,
     transacoes,
     cartoes,
     pessoas,
@@ -733,13 +1226,24 @@ export function useAppData() {
     movimentosMetas,
     regrasCategorizacao,
     categoriasPersonalizadas,
+    alertasOcultos,
     pin,
+    entrar,
+    cadastrarUsuario,
+    recuperarSenha,
+    configurarFamilia,
+    sair,
+    updateMembro,
+    renovarCodigoConvite,
     addTransacao,
     addTransacoes,
     updateTransacao,
     deleteTransacao,
+    deleteTransacoes,
     addCartao,
     addPessoa,
+    updatePessoa,
+    deletePessoa,
     addConta,
     updateConta,
     deleteConta,
@@ -770,6 +1274,8 @@ export function useAppData() {
     updateCategoriaPersonalizada,
     deleteCategoriaPersonalizada,
     updatePin,
+    snoozeAlerta,
+    restoreAlerta,
     clearAll,
   };
 }

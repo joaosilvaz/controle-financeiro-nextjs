@@ -153,8 +153,17 @@ export default function CardsPanel({
   }
 
   function abrirPagamento(fatura: FaturaCartao) {
+    const contaVinculada = transacoes.find((transacao) =>
+      transacao.cartaoId === fatura.cartaoId &&
+      transacao.faturaMes === fatura.mes &&
+      Boolean(transacao.contaId)
+    )?.contaId;
     setPaymentInvoice(fatura);
-    setPaymentAccount(contas.find((conta) => conta.ativa)?.id ?? "");
+    setPaymentAccount(
+      contas.find((conta) => conta.id === contaVinculada && conta.ativa)?.id ??
+      contas.find((conta) => conta.ativa)?.id ??
+      ""
+    );
     setPaymentDate(hoje);
     setPaymentValue(String(fatura.valorFechado));
     setError("");
@@ -364,9 +373,11 @@ export default function CardsPanel({
         {faturasVisiveis.length ? (
           <div className="invoice-control-list">
             {faturasVisiveis.map(({ cartao, mes, fatura, valorAtual, dataVencimento, status }) => {
-              const valorExibido = fatura?.valorFechado ?? valorAtual;
+              // O valor exibido sempre vem dos lançamentos atuais. O fechamento é
+              // apenas o registro do estado da fatura, não uma segunda fonte de total.
+              const valorExibido = valorAtual;
               const diferencaPagamento = fatura?.status === "paga"
-                ? (fatura.valorPago ?? fatura.valorFechado) - fatura.valorFechado
+                ? (fatura.valorPago ?? fatura.valorFechado) - valorAtual
                 : 0;
               return (
                 <article className={`invoice-control-row ${status}`} key={`${cartao.id}:${mes}`}>
@@ -394,7 +405,13 @@ export default function CardsPanel({
                       <button type="button" className="secondary" disabled={saving} onClick={() => fecharFatura(cartao, mes, valorAtual)}>Fechar fatura</button>
                     ) : fatura.status === "fechada" ? (
                       <>
-                        <button type="button" disabled={saving} onClick={() => abrirPagamento(fatura)}>Registrar pagamento</button>
+                        <button
+                          type="button"
+                          disabled={saving || valorAtual <= 0}
+                          onClick={() => abrirPagamento({ ...fatura, valorFechado: valorAtual })}
+                        >
+                          Registrar pagamento
+                        </button>
                         <button type="button" className="link" disabled={saving} onClick={() => reabrirFatura(fatura)}>Reabrir</button>
                       </>
                     ) : (

@@ -1,6 +1,25 @@
 export type TipoTransacao = "despesa" | "receita" | "transferencia";
 export type TipoConta = "corrente" | "poupanca" | "dinheiro" | "investimento";
 export type CorrespondenciaRegra = "contem" | "comeca" | "exata";
+export type PapelFamiliar = "admin" | "membro";
+
+export type PerfilFamiliar = {
+  uid: string;
+  nome: string;
+  email: string;
+  papel: PapelFamiliar;
+  familiaId: string;
+  ativo: boolean;
+  criadoEm: string;
+};
+
+export type FamiliaFinanceira = {
+  id: string;
+  nome: string;
+  codigoConvite: string;
+  criadaPorUid: string;
+  criadaEm: string;
+};
 
 export type ContaFinanceira = {
   id: string;
@@ -100,6 +119,20 @@ export type MovimentoMeta = {
 
 export type NovoMovimentoMeta = Omit<MovimentoMeta, "id">;
 
+export type NivelAlertaFinanceiro = "critico" | "atencao" | "lembrete";
+
+export type AlertaFinanceiro = {
+  id: string;
+  nivel: NivelAlertaFinanceiro;
+  origem: "saldo" | "fatura" | "orcamento" | "recorrencia" | "meta" | "fechamento";
+  titulo: string;
+  descricao: string;
+  destino: "contas" | "cartoes" | "orcamentos" | "recorrencias" | "metas" | "resumo";
+  acao: string;
+  dataReferencia?: string;
+  valor?: number;
+};
+
 export type RegraCategorizacao = {
   id: string;
   termo: string;
@@ -142,6 +175,8 @@ export type Transacao = {
   faturaMes?: string;
   parcelaAtual?: number;
   totalParcelas?: number;
+  /** Valor original da compra antes da divisão em parcelas. */
+  valorTotalCompra?: number;
   grupoParcelamentoId?: string;
   recorrenciaId?: string;
   competenciaRecorrencia?: string;
@@ -153,6 +188,12 @@ export type Transacao = {
   regraCategorizacaoId?: string;
   tags?: string[];
   nota?: string;
+  criadoPorUid?: string;
+  criadoPorNome?: string;
+  criadoEm?: string;
+  atualizadoPorUid?: string;
+  atualizadoPorNome?: string;
+  atualizadoEm?: string;
 };
 
 export type NovaTransacao = Omit<Transacao, "id">;
